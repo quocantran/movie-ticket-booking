@@ -1,0 +1,252 @@
+# ============================================
+# Booking Service — OpenAPI 3.0 Specification
+# Dịch vụ quản lý đặt vé xem phim
+# Khởi tạo saga, quản lý vòng đời đơn đặt vé
+# ============================================
+openapi: 3.0.3
+info:
+  title: Booking Service API
+  description: |
+    API đặc tả cho Booking Service — dịch vụ quản lý vòng đời đặt vé xem phim.
+    Đây là dịch vụ khởi tạo saga (Choreography) và tiêu thụ sự kiện kết quả từ Kafka.
+
+    **Vai trò trong saga:**
+    - Tạo đơn đặt vé (PENDING) → phát sự kiện BOOKING_CREATED
+    - Nhận PAYMENT_PROCESSED → cập nhật CONFIRMED
+    - Nhận SEATS_COMPENSATED hoặc SEAT_RESERVATION_FAILED → cập nhật CANCELLED
+
+    **Xác thực:** Tất cả endpoint (trừ /health) yêu cầu JWT Bearer token.
+    userId được trích xuất từ JWT payload, không từ request body.
+  version: 1.0.0
+
+servers:
+  - url: http://localhost:5001
+    description: Phát triển local
+  - url: http://booking-service:5001
+    description: Docker Compose nội bộ
+
+paths:
+  /health:
+    get:
+      summary: Kiểm tra sức khỏe dịch vụ
+      operationId: healthCheck
+      tags:
+        - Health
+      responses:
+        '200':
+          description: Dịch vụ hoạt động bình thường
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  service:
+                    type: string
+                    example: booking-service
+
+  /bookings:
+    get:
+      summary: Danh sách đơn đặt vé của user hiện tại
+      operationId: listBookings
+      tags:
+        - Bookings
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Danh sách đơn đặt vé
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Booking'
+
+    post:
+      summary: Tạo đơn đặt vé mới (khởi tạo saga)
+      description: |
+        Tạo đơn đặt vé với trạng thái PENDING và ghi sự kiện BOOKING_CREATED vào bảng outbox.
+        Debezium CDC sẽ tự động phát sự kiện lên Kafka topic `booking.events`.
+
+        Luồng thanh toán dựa trên số dư tài khoản user:
+        - Nếu user đủ tiền → thanh toán thành công → vé được xác nhận
+        - Nếu user không đủ tiền → PAYMENT_FAILED → compensation tự động (giải phóng ghế + hủy đơn)
+      operationId: createBooking
+      tags:
+        - Bookings
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateBookingRequest'
+            examples:
+              datVeThanhCong:
+                summary: Đặt vé cho user có đủ số dư
+                value:
+                  movieId: "movie-001"
+                  showtimeId: "showtime-001"
+                  seatIds: ["seat-A1", "seat-A2"]
+                  totalAmount: 200000
+              datVeKhongDuTien:
+                summary: Đặt vé cho user không đủ số dư (compensation tự động)
+                value:
+                  movieId: "movie-001"
+                  showtimeId: "showtime-001"
+                  seatIds: ["seat-B1"]
+                  totalAmount: 5000000
+      responses:
+        '201':
+          description: Đơn đặt vé đã được tạo thành công
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Booking'
+        '400':
+          description: Dữ liệu đầu vào không hợp lệ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /bookings/{id}:
+    get:
+      summary: Lấy chi tiết đơn đặt vé theo ID
+      operationId: getBookingById
+      tags:
+        - Bookings
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: ID của đơn đặt vé
+      responses:
+        '200':
+          description: Chi tiết đơn đặt vé
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Booking'
+        '404':
+          description: Không tìm thấy đơn đặt vé
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT token nhận từ POST /auth/login (qua Auth Service)
+
+  schemas:
+    CreateBookingRequest:
+      type: object
+      description: userId được trích xuất từ JWT token, không cần gửi trong body
+      required:
+        - movieId
+        - showtimeId
+        - seatIds
+        - totalAmount
+      properties:
+        movieId:
+          type: string
+          description: ID phim
+          example: "movie-001"
+        showtimeId:
+          type: string
+          description: ID suất chiếu
+          example: "showtime-001"
+        seatIds:
+          type: array
+          items:
+            type: string
+          description: Danh sách ID ghế đã chọn
+          example: ["seat-A1", "seat-A2"]
+        totalAmount:
+          type: number
+          format: decimal
+          description: Tổng tiền (VNĐ)
+          example: 200000
+
+    Booking:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: ID đơn đặt vé
+        userId:
+          type: string
+          description: ID người dùng
+        movieId:
+          type: string
+          description: ID phim
+        showtimeId:
+          type: string
+          description: ID suất chiếu
+        seatIds:
+          type: array
+          items:
+            type: string
+          description: Danh sách ID ghế
+        totalAmount:
+          type: number
+          format: decimal
+          description: Tổng tiền
+        status:
+          type: string
+          enum:
+            - PENDING
+            - SEATS_RESERVED
+            - PAYMENT_PROCESSED
+            - CONFIRMED
+            - CANCELLED
+          description: |
+            Trạng thái đơn đặt vé:
+            - PENDING: Vừa tạo, chờ giữ ghế
+            - SEATS_RESERVED: Ghế đã giữ, chờ thanh toán
+            - PAYMENT_PROCESSED: Thanh toán thành công
+            - CONFIRMED: Đã xác nhận (vé đã phát hành)
+            - CANCELLED: Đã hủy (do ghế không khả dụng hoặc không đủ số dư)
+        failureReason:
+          type: string
+          nullable: true
+          description: Lý do thất bại khi đơn bị hủy (CANCELLED), null với trạng thái khác
+          example: Tài khoản không đủ số dư để thanh toán.
+        failedStep:
+          type: string
+          nullable: true
+          enum:
+            - SEATS_RESERVED
+            - PAYMENT_PROCESSED
+          description: Bước saga bị lỗi khi đơn bị hủy, null với trạng thái khác
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    ErrorResponse:
+      type: object
+      properties:
+        statusCode:
+          type: integer
+        message:
+          type: string
+        error:
+          type: string

@@ -1,0 +1,129 @@
+# ============================================
+# Seat Service — OpenAPI 3.0 Specification
+# Dịch vụ quản lý ghế ngồi theo suất chiếu
+# Hoạt động hướng sự kiện — chỉ có REST health
+# ============================================
+openapi: 3.0.3
+info:
+  title: Seat Service API
+  description: |
+    API đặc tả cho Seat Service — dịch vụ quản lý kho ghế theo suất chiếu.
+
+    Seat Service hoạt động theo hướng sự kiện (Kafka Consumer) cho luồng saga,
+    đồng thời cung cấp REST API `/seats` để frontend lấy trạng thái ghế.
+
+    **Vai trò trong saga:**
+    - Nhận BOOKING_CREATED → giữ ghế (SELECT FOR UPDATE) → phát SEATS_RESERVED hoặc SEAT_RESERVATION_FAILED
+    - Nhận PAYMENT_FAILED → giải phóng ghế (bù trừ) → phát SEATS_COMPENSATED
+
+    **REST API:**
+    - GET /seats?showtimeId=xxx — Lấy danh sách ghế kèm trạng thái cho frontend
+
+    **Xử lý đồng thời:**
+    - Sử dụng khóa bi quan (Pessimistic Locking — SELECT FOR UPDATE) để ngăn 2 booking đồng thời giữ cùng ghế.
+  version: 1.0.0
+
+servers:
+  - url: http://localhost:5002
+    description: Phát triển local
+  - url: http://seat-service:5002
+    description: Docker Compose nội bộ
+
+paths:
+  /health:
+    get:
+      summary: Kiểm tra sức khỏe dịch vụ
+      operationId: healthCheck
+      tags:
+        - Health
+      responses:
+        '200':
+          description: Dịch vụ hoạt động bình thường
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  service:
+                    type: string
+                    example: seat-service
+
+  /seats:
+    get:
+      summary: Lấy danh sách ghế theo suất chiếu
+      description: |
+        Trả về tất cả ghế cho một suất chiếu kèm trạng thái (AVAILABLE / HELD / BOOKED).
+        Frontend sử dụng endpoint này để hiển thị sơ đồ ghế thực tế thay vì hardcode.
+      operationId: getSeatsByShowtime
+      tags:
+        - Seats
+      parameters:
+        - name: showtimeId
+          in: query
+          required: true
+          description: ID suất chiếu
+          schema:
+            type: string
+            example: showtime-001
+      responses:
+        '200':
+          description: Danh sách ghế
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Seat'
+
+  # Kafka Topics tiêu thụ:
+  #   - booking.events (BOOKING_CREATED)
+  #   - payment.events (PAYMENT_FAILED)
+  #
+  # Kafka Topics phát ra (qua outbox + CDC):
+  #   - seat.events (SEATS_RESERVED, SEAT_RESERVATION_FAILED, SEATS_COMPENSATED)
+
+components:
+  schemas:
+    Seat:
+      type: object
+      description: Thông tin ghế ngồi theo suất chiếu
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: ID ghế
+        showtimeId:
+          type: string
+          description: ID suất chiếu
+        seatNumber:
+          type: string
+          description: Số ghế (ví dụ A1, B3)
+          example: "A1"
+        seatRow:
+          type: string
+          description: Hàng ghế (ví dụ A, B)
+          example: "A"
+        status:
+          type: string
+          enum:
+            - AVAILABLE
+            - HELD
+            - BOOKED
+          description: |
+            Trạng thái ghế:
+            - AVAILABLE: Ghế trống, có thể đặt
+            - HELD: Đang giữ cho một đơn đặt vé (chờ thanh toán)
+            - BOOKED: Đã đặt thành công
+        bookingId:
+          type: string
+          nullable: true
+          description: ID đơn đặt vé đang giữ/đã đặt ghế này
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time

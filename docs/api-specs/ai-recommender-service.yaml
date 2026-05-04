@@ -1,0 +1,162 @@
+# ============================================
+# AI Recommender Service — OpenAPI 3.0 Specification
+# Dịch vụ gợi ý phim dựa trên AI (Semantic Similarity)
+# ============================================
+openapi: 3.0.3
+info:
+  title: AI Recommender Service API
+  description: |
+    API đặc tả cho AI Recommender Service — dịch vụ gợi ý phim sử dụng AI.
+
+    **Thuật toán gợi ý:**
+    - Sử dụng mô hình **all-MiniLM-L6-v2** (Sentence Transformers) để sinh semantic embeddings cho mô tả phim
+    - Điểm tương đồng = **60% Cosine Similarity** (mô tả) + **40% Jaccard Similarity** (thể loại)
+    - Có hệ thống **bonus tiers** để phân hóa phim có điểm gần bằng nhau
+
+    **Kafka Consumer (event-driven):**
+    - Nhận `MOVIE_CREATED` từ `movie.events` → sinh embedding cho phim mới
+    - Nhận `BOOKING_CONFIRMED` từ `booking.events` → lưu user behavior
+
+    **REST API:**
+    - `GET /recommendations/grouped` — Gợi ý phim (yêu cầu JWT)
+  version: 1.0.0
+
+servers:
+  - url: http://localhost:5006
+    description: Phát triển local
+  - url: http://ai-recommender-service:5006
+    description: Docker Compose nội bộ
+
+paths:
+  /health:
+    get:
+      summary: Kiểm tra sức khỏe dịch vụ
+      operationId: healthCheck
+      tags:
+        - Health
+      responses:
+        '200':
+          description: Dịch vụ hoạt động bình thường
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  service:
+                    type: string
+                    example: ai-recommender-service
+
+  /recommendations/grouped:
+    get:
+      summary: Gợi ý phim theo sections
+      description: |
+        Trả về gợi ý phim được chia theo sections:
+        - **topPicks**: Top phim có điểm AI cao nhất (mix nhiều thể loại)
+        - **genreSections**: Phim theo từng thể loại user yêu thích, sắp xếp theo tần suất
+
+        Thuật toán:
+        1. Lấy lịch sử phim user đã đặt vé
+        2. Lấy TẤT CẢ phim chưa xem
+        3. Tính combined score = 60% cosine similarity + 40% Jaccard similarity + bonus tiers
+        4. Trả về top picks + per-genre sections
+      operationId: getRecommendationsGrouped
+      tags:
+        - Recommendations
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          description: Số lượng phim top picks tối đa (mặc định 10)
+          schema:
+            type: integer
+            default: 10
+            example: 10
+      responses:
+        '200':
+          description: Gợi ý phim theo sections
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupedRecommendations'
+        '401':
+          description: Token không hợp lệ hoặc thiếu
+
+  # Kafka Topics tiêu thụ:
+  #   - movie.events (MOVIE_CREATED → sinh embedding)
+  #   - booking.events (BOOKING_CONFIRMED → lưu user behavior)
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT token nhận từ Auth Service (/auth/login)
+
+  schemas:
+    GroupedRecommendations:
+      type: object
+      properties:
+        userId:
+          type: string
+          format: uuid
+        topPicks:
+          type: array
+          description: Top phim gợi ý (mixed genres, highest combined score)
+          items:
+            $ref: '#/components/schemas/RecommendedMovie'
+        genreSections:
+          type: array
+          description: Phim theo từng thể loại user đã xem
+          items:
+            $ref: '#/components/schemas/GenreSection'
+        userGenres:
+          type: array
+          description: Danh sách thể loại user đã xem (sắp xếp theo tần suất)
+          items:
+            type: string
+          example: ["Hành động", "Khoa học viễn tưởng", "Hoạt hình"]
+
+    RecommendedMovie:
+      type: object
+      properties:
+        movieId:
+          type: string
+          format: uuid
+        title:
+          type: string
+          example: "Avengers: Endgame"
+        genres:
+          type: array
+          items:
+            type: string
+          example: ["Hành động", "Khoa học viễn tưởng"]
+        similarityScore:
+          type: number
+          description: Điểm tổng hợp (60% cosine + 40% jaccard + bonus tiers, normalized)
+          example: 0.6523
+        cosineScore:
+          type: number
+          description: Cosine similarity trên mô tả phim (embedding)
+          example: 0.7845
+        jaccardScore:
+          type: number
+          description: Jaccard similarity trên thể loại
+          example: 0.5000
+
+    GenreSection:
+      type: object
+      properties:
+        genre:
+          type: string
+          description: Tên thể loại
+          example: "Hành động"
+        movies:
+          type: array
+          items:
+            $ref: '#/components/schemas/RecommendedMovie'

@@ -1,0 +1,172 @@
+# ============================================
+# Payment Service — OpenAPI 3.0 Specification
+# Dịch vụ xử lý thanh toán + quản lý ví
+# ============================================
+openapi: 3.0.3
+info:
+  title: Payment Service API
+  description: |
+    API đặc tả cho Payment Service — dịch vụ xử lý thanh toán và quản lý ví.
+
+    **REST API:**
+    - `GET /wallets/me` — Xem số dư ví của user hiện tại (yêu cầu JWT)
+    - `POST /wallets` — Tạo ví cho user mới (gọi nội bộ bởi Auth Service sau khi đăng ký)
+
+    **Cơ chế thanh toán (Kafka event-driven):**
+    - Khi nhận sự kiện SEATS_RESERVED, Payment Service kiểm tra số dư user:
+      - Nếu `wallets.balance >= totalAmount` → trừ số dư → phát `PAYMENT_PROCESSED`
+      - Nếu `wallets.balance < totalAmount` → phát `PAYMENT_FAILED` → compensation
+  version: 1.0.0
+
+servers:
+  - url: http://localhost:5004
+    description: Phát triển local
+  - url: http://payment-service:5004
+    description: Docker Compose nội bộ
+
+paths:
+  /health:
+    get:
+      summary: Kiểm tra sức khỏe dịch vụ
+      operationId: healthCheck
+      tags:
+        - Health
+      responses:
+        '200':
+          description: Dịch vụ hoạt động bình thường
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  service:
+                    type: string
+                    example: payment-service
+
+  /wallets/me:
+    get:
+      summary: Xem số dư ví của user hiện tại
+      description: Trả về số dư ví của user đang đăng nhập (từ JWT token)
+      operationId: getMyWallet
+      tags:
+        - Wallet
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Thông tin ví
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WalletBalance'
+        '401':
+          description: Token không hợp lệ hoặc thiếu
+
+  /wallets:
+    post:
+      summary: Tạo ví cho user mới
+      description: |
+        Được gọi nội bộ bởi Auth Service sau khi đăng ký tài khoản mới.
+        Nếu ví đã tồn tại, trả về ví hiện tại mà không tạo mới.
+      operationId: createWallet
+      tags:
+        - Wallet
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [userId]
+              properties:
+                userId:
+                  type: string
+                  format: uuid
+                  description: ID user cần tạo ví
+                initialBalance:
+                  type: number
+                  description: Số dư khởi tạo (mặc định 200,000 VNĐ)
+                  example: 200000
+      responses:
+        '201':
+          description: Ví đã được tạo hoặc đã tồn tại
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateWalletResponse'
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT token nhận từ Auth Service (/auth/login)
+
+  schemas:
+    WalletBalance:
+      type: object
+      properties:
+        userId:
+          type: string
+          format: uuid
+        balance:
+          type: number
+          format: decimal
+          description: Số dư tài khoản (VNĐ)
+          example: 500000
+
+    CreateWalletResponse:
+      type: object
+      properties:
+        userId:
+          type: string
+          format: uuid
+        balance:
+          type: number
+          format: decimal
+          example: 200000
+        created:
+          type: boolean
+          description: true nếu ví mới được tạo, false nếu đã tồn tại
+
+    Payment:
+      type: object
+      description: Thông tin thanh toán cho đơn đặt vé (chỉ tạo qua Kafka events)
+      properties:
+        id:
+          type: string
+          format: uuid
+        bookingId:
+          type: string
+        userId:
+          type: string
+        amount:
+          type: number
+          format: decimal
+          example: 200000
+        status:
+          type: string
+          enum:
+            - PENDING
+            - PROCESSED
+            - FAILED
+            - REFUNDED
+          description: |
+            - PENDING: Đang chờ xử lý
+            - PROCESSED: Đã thanh toán thành công
+            - FAILED: Thanh toán thất bại (không đủ số dư)
+            - REFUNDED: Đã hoàn tiền
+        failureReason:
+          type: string
+          nullable: true
+          example: "Tài khoản không đủ số dư để thanh toán"
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time

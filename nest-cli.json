@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json.schemastore.org/nest-cli",
+  "collection": "@nestjs/schematics",
+  "sourceRoot": "services/booking-service/src",
+  "monorepo": true,
+  "root": "services/booking-service",
+  "compilerOptions": {
+    "webpack": false,
+    "tsConfigPath": "services/booking-service/tsconfig.app.json"
+  },
+  "projects": {
+    "booking-service": {
+      "type": "application",
+      "root": "services/booking-service",
+      "entryFile": "main",
+      "sourceRoot": "services/booking-service/src",
+      "compilerOptions": {
+        "tsConfigPath": "services/booking-service/tsconfig.app.json"
+      }
+    },
+    "seat-service": {
+      "type": "application",
+      "root": "services/seat-service",
+      "entryFile": "main",
+      "sourceRoot": "services/seat-service/src",
+      "compilerOptions": {
+        "tsConfigPath": "services/seat-service/tsconfig.app.json"
+      }
+    },
+    "movie-service": {
+      "type": "application",
+      "root": "services/movie-service",
+      "entryFile": "main",
+      "sourceRoot": "services/movie-service/src",
+      "compilerOptions": {
+        "tsConfigPath": "services/movie-service/tsconfig.app.json"
+      }
+    },
+    "payment-service": {
+      "type": "application",
+      "root": "services/payment-service",
+      "entryFile": "main",
+      "sourceRoot": "services/payment-service/src",
+      "compilerOptions": {
+        "tsConfigPath": "services/payment-service/tsconfig.app.json"
+      }
+    },
+    "auth-service": {
+      "type": "application",
+      "root": "services/auth-service",
+      "entryFile": "main",
+      "sourceRoot": "services/auth-service/src",
+      "compilerOptions": {
+        "tsConfigPath": "services/auth-service/tsconfig.app.json"
+      }
+    },
+    "gateway": {
+      "type": "application",
+      "root": "gateway",
+      "entryFile": "main",
+      "sourceRoot": "gateway/src",
+      "compilerOptions": {
+        "tsConfigPath": "gateway/tsconfig.app.json"
+      }
+    },
+    "ai-recommender-service": {
+      "type": "application",
+      "root": "services/ai-recommender-service",
+      "entryFile": "main",
+      "sourceRoot": "services/ai-recommender-service/src",
+      "compilerOptions": {
+        "tsConfigPath": "services/ai-recommender-service/tsconfig.app.json"
+      }
+    },
+    "common": {
+      "type": "library",
+      "root": "libs/common",
+      "entryFile": "index",
+      "sourceRoot": "libs/common/src",
+      "compilerOptions": {
+        "tsConfigPath": "libs/common/tsconfig.lib.json"
+      }
+    }
+  }
+}

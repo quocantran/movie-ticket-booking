@@ -1,0 +1,255 @@
+# ============================================
+# Movie Service — OpenAPI 3.0 Specification
+# Dịch vụ quản lý danh mục phim và suất chiếu
+# Không tham gia saga — chỉ cung cấp API đọc
+# ============================================
+openapi: 3.0.3
+info:
+  title: Movie Service API
+  description: |
+    API đặc tả cho Movie Service — dịch vụ quản lý danh mục phim và suất chiếu.
+    Không tham gia luồng saga trực tiếp, nhưng khi Admin tạo phim mới sẽ phát sự kiện
+    `MOVIE_CREATED` để AI Recommender Service tiêu thụ và sinh embedding.
+
+    - **GET /movies**: Danh sách phim (public)
+    - **POST /movies**: Tạo phim mới (ADMIN only, phát sự kiện MOVIE_CREATED)
+    - **GET /movies/:id**: Chi tiết phim
+    - **GET /movies/:id/showtimes**: Suất chiếu của phim
+  version: 1.0.0
+
+servers:
+  - url: http://localhost:5003
+    description: Phát triển local
+  - url: http://movie-service:5003
+    description: Docker Compose nội bộ
+
+paths:
+  /health:
+    get:
+      summary: Kiểm tra sức khỏe dịch vụ
+      operationId: healthCheck
+      tags:
+        - Health
+      responses:
+        '200':
+          description: Dịch vụ hoạt động bình thường
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  service:
+                    type: string
+                    example: movie-service
+
+  /movies:
+    get:
+      summary: Danh sách tất cả phim
+      operationId: listMovies
+      tags:
+        - Movies
+      responses:
+        '200':
+          description: Danh sách phim đang chiếu
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Movie'
+
+    post:
+      summary: Tạo phim mới (ADMIN)
+      description: |
+        Tạo phim mới trong hệ thống. Chỉ user có role ADMIN mới được phép.
+        Sau khi tạo, hệ thống phát sự kiện `MOVIE_CREATED` để
+        AI Recommender Service tiêu thụ và sinh embedding cho phim mới.
+      operationId: createMovie
+      tags:
+        - Movies
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateMovieRequest'
+      responses:
+        '201':
+          description: Phim đã được tạo thành công
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Movie'
+        '403':
+          description: Không có quyền ADMIN
+
+  /movies/{id}:
+    get:
+      summary: Lấy chi tiết phim theo ID
+      operationId: getMovieById
+      tags:
+        - Movies
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+          description: ID phim
+      responses:
+        '200':
+          description: Chi tiết phim
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Movie'
+        '404':
+          description: Không tìm thấy phim
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /movies/{id}/showtimes:
+    get:
+      summary: Danh sách suất chiếu của một phim
+      operationId: getShowtimesByMovie
+      tags:
+        - Showtimes
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+          description: ID phim
+      responses:
+        '200':
+          description: Danh sách suất chiếu
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Showtime'
+        '404':
+          description: Không tìm thấy phim
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT token nhận từ Auth Service (/auth/login) — yêu cầu role ADMIN cho POST /movies
+
+  schemas:
+    Movie:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: ID phim
+        title:
+          type: string
+          description: Tên phim
+          example: "Avengers: Endgame"
+        genre:
+          type: string
+          description: Thể loại
+          example: "Hành động"
+        duration:
+          type: integer
+          description: Thời lượng (phút)
+          example: 120
+        posterUrl:
+          type: string
+          description: Đường dẫn ảnh poster
+          example: "https://example.com/poster.jpg"
+        description:
+          type: string
+          description: Mô tả phim
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CreateMovieRequest:
+      type: object
+      required:
+        - title
+        - genre
+        - duration
+      properties:
+        title:
+          type: string
+          description: Tên phim
+          example: "Spider-Man: No Way Home"
+        genre:
+          type: string
+          description: Thể loại (phân cách bằng dấu phẩy)
+          example: "Hành động, Khoa học viễn tưởng"
+        duration:
+          type: integer
+          description: Thời lượng (phút)
+          example: 148
+        posterUrl:
+          type: string
+          description: Đường dẫn ảnh poster (tùy chọn)
+          example: "https://example.com/poster.jpg"
+        description:
+          type: string
+          description: Mô tả phim
+          example: "Peter Parker đối mặt với hậu quả khi danh tính bị tiết lộ..."
+
+    Showtime:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: ID suất chiếu
+        movieId:
+          type: string
+          description: ID phim
+        hall:
+          type: string
+          description: Phòng chiếu
+          example: "Phòng A"
+        startTime:
+          type: string
+          format: date-time
+          description: Thời gian bắt đầu chiếu
+        price:
+          type: number
+          format: decimal
+          description: Giá vé (VNĐ)
+          example: 100000
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    ErrorResponse:
+      type: object
+      properties:
+        statusCode:
+          type: integer
+        message:
+          type: string
+        error:
+          type: string

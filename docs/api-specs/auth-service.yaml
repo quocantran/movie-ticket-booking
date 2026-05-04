@@ -1,0 +1,155 @@
+openapi: 3.0.3
+info:
+  title: Auth Service API
+  description: |
+    Dịch vụ xác thực JWT — đăng nhập, đăng ký, và lấy thông tin profile.
+    
+    Auth Service quản lý tài khoản người dùng
+    trong database riêng (auth_db). Không tham gia luồng Saga.
+  version: 1.0.0
+  contact:
+    name: Movie Ticket Booking Team
+
+servers:
+  - url: http://localhost:5005
+    description: Auth Service (direct)
+  - url: http://localhost:8080
+    description: API Gateway
+
+paths:
+  /health:
+    get:
+      summary: Health Check
+      operationId: healthCheck
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  service:
+                    type: string
+                    example: auth-service
+
+  /auth/login:
+    post:
+      summary: Đăng nhập
+      description: Xác thực bằng email + mật khẩu, trả về JWT token
+      operationId: login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: nguyenvana@email.com
+                password:
+                  type: string
+                  example: "123456"
+      responses:
+        '201':
+          description: Đăng nhập thành công
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '401':
+          description: Email hoặc mật khẩu không đúng
+
+  /auth/register:
+    post:
+      summary: Đăng ký tài khoản mới
+      description: Tạo tài khoản mới với email, tên, và mật khẩu
+      operationId: register
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, email, password]
+              properties:
+                name:
+                  type: string
+                  example: Nguyễn Văn A
+                email:
+                  type: string
+                  format: email
+                  example: newuser@email.com
+                password:
+                  type: string
+                  example: "123456"
+      responses:
+        '201':
+          description: Đăng ký thành công
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '409':
+          description: Email đã được sử dụng
+
+  /auth/me:
+    get:
+      summary: Lấy thông tin profile
+      description: Trả về thông tin user từ JWT token
+      operationId: getProfile
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Thông tin user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfile'
+        '401':
+          description: Token không hợp lệ hoặc đã hết hạn
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    AuthResponse:
+      type: object
+      properties:
+        access_token:
+          type: string
+          description: JWT token (hết hạn 24h)
+        user:
+          $ref: '#/components/schemas/UserProfile'
+
+    UserProfile:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: user-001
+        name:
+          type: string
+          example: Nguyễn Văn A
+        email:
+          type: string
+          format: email
+          example: nguyenvana@email.com
+        role:
+          type: string
+          enum:
+            - USER
+            - ADMIN
+          example: USER
