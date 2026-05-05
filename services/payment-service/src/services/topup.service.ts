@@ -7,6 +7,8 @@ import * as crypto from 'crypto';
 import { TopupEntity, TopupStatus } from '../entities/topup.entity';
 import { WalletEntity } from '../entities/wallet.entity';
 
+export type TopupVerifyResult = 'PAID' | 'CANCELLED' | 'EXPIRED' | 'PENDING';
+
 @Injectable()
 export class TopupService {
   private readonly logger = new Logger(TopupService.name);
@@ -19,7 +21,7 @@ export class TopupService {
     private readonly walletRepository: Repository<WalletEntity>,
     private readonly configService: ConfigService,
     private readonly dataSource: DataSource,
-  ) {}
+  ) { }
 
   private generateOrderCode(): number {
     const timestamp = Date.now() % 1000000000;
@@ -77,6 +79,81 @@ export class TopupService {
     return fetch(url, { ...options, signal: controller.signal }).finally(() =>
       clearTimeout(timeoutId),
     );
+  }
+
+  private async fetchPayosPaymentRequest(orderCode: number): Promise<any> {
+    const payosUrl = this.configService.get<string>('PAYOS_URL', 'https://api-merchant.payos.vn');
+    const apiKey = this.configService.get<string>('PAYOS_API_KEY', '');
+    const clientId = this.configService.get<string>('PAYOS_CLIENT_ID', '');
+
+    const res = await this.fetchWithTimeout(`${payosUrl}/v2/payment-requests/${orderCode}`, {
+      headers: {
+        'x-api-key': apiKey,
+        'x-client-id': clientId,
+        'Content-Type': 'application/json',
+      },
+      method: 'GET',
+    });
+
+    if (!res.ok) {
+      const errorBody = await res.text().catch(() => 'Unknown error');
+      throw new BadRequestException(`Không thể kiểm tra trạng thái thanh toán: ${errorBody}`);
+    }
+
+    const resp = await res.json();
+    return resp.data;
+  }
+
+  private async markTopupStatus(orderCode: number, status: TopupStatus): Promise<void> {
+    await this.topupRepository
+      .createQueryBuilder()
+      .update(TopupEntity)
+      .set({ status })
+      .where('orderCode = :orderCode AND status = :pending', {
+        orderCode,
+        pending: TopupStatus.PENDING,
+      })
+      .execute();
+  }
+
+  private async syncTopupFromPayos(topup: TopupEntity): Promise<TopupVerifyResult> {
+    if (topup.status === TopupStatus.PAID) return 'PAID';
+    if (topup.status === TopupStatus.CANCELLED) return 'CANCELLED';
+    if (topup.status === TopupStatus.EXPIRED) return 'EXPIRED';
+
+    const payosData = await this.fetchPayosPaymentRequest(topup.orderCode);
+    const payosStatus = String(payosData?.status || '').toUpperCase();
+
+    if (payosStatus === 'PAID') {
+      const transaction = payosData.transactions?.[0];
+      if (Number(payosData.amount) !== Number(topup.amount)) {
+        this.logger.error(`Amount mismatch: payOS=${payosData.amount}, local=${topup.amount}, orderCode=${topup.orderCode}`);
+        throw new BadRequestException('Số tiền không khớp');
+      }
+
+      await this.dataSource.transaction(async (manager) => {
+        await this.creditWallet(manager, topup, {
+          reference: transaction?.reference,
+          counterAccountBankName: transaction?.counterAccountBankName,
+          counterAccountName: transaction?.counterAccountName,
+          counterAccountNumber: transaction?.counterAccountNumber,
+          transactionDateTime: transaction?.transactionDateTime,
+        });
+      });
+      return 'PAID';
+    }
+
+    if (payosStatus === 'CANCELLED') {
+      await this.markTopupStatus(topup.orderCode, TopupStatus.CANCELLED);
+      return 'CANCELLED';
+    }
+
+    if (payosStatus === 'EXPIRED') {
+      await this.markTopupStatus(topup.orderCode, TopupStatus.EXPIRED);
+      return 'EXPIRED';
+    }
+
+    return 'PENDING';
   }
 
   private async creditWallet(
@@ -144,9 +221,9 @@ export class TopupService {
     const orderCode = this.generateOrderCode();
     const description = orderCode.toString();
     const gatewayPort = this.configService.get<string>('GATEWAY_PORT', '8080');
-    const frontendPort = this.configService.get<string>('FRONTEND_PORT', '3000');
-    const cancelUrl = `http://localhost:${frontendPort}/wallet?topup=cancelled`;
-    const returnUrl = `http://localhost:${gatewayPort}/topup/verify/${orderCode}`;
+    const verifyUrl = `http://localhost:${gatewayPort}/topup/verify/${orderCode}`;
+    const cancelUrl = verifyUrl;
+    const returnUrl = verifyUrl;
 
     const payosUrl = this.configService.get<string>('PAYOS_URL', 'https://api-merchant.payos.vn');
     const apiKey = this.configService.get<string>('PAYOS_API_KEY', '');
@@ -197,7 +274,7 @@ export class TopupService {
     return { checkoutUrl, orderCode };
   }
 
-  async verifyTopup(orderCode: number): Promise<boolean> {
+  async verifyTopup(orderCode: number): Promise<TopupVerifyResult> {
     const topup = await this.topupRepository.findOne({
       where: { orderCode },
     });
@@ -206,79 +283,7 @@ export class TopupService {
       throw new NotFoundException('Không tìm thấy giao dịch nạp tiền');
     }
 
-    if (topup.status === TopupStatus.PAID) {
-      return true;
-    }
-
-    const payosUrl = this.configService.get<string>('PAYOS_URL', 'https://api-merchant.payos.vn');
-    const apiKey = this.configService.get<string>('PAYOS_API_KEY', '');
-    const clientId = this.configService.get<string>('PAYOS_CLIENT_ID', '');
-
-    const res = await this.fetchWithTimeout(`${payosUrl}/v2/payment-requests/${orderCode}`, {
-      headers: {
-        'x-api-key': apiKey,
-        'x-client-id': clientId,
-        'Content-Type': 'application/json',
-      },
-      method: 'GET',
-    });
-
-    if (!res.ok) {
-      throw new BadRequestException('Không thể kiểm tra trạng thái thanh toán');
-    }
-
-    const resp = await res.json();
-    const payosData = resp.data;
-    const { status } = payosData;
-
-    if (status === 'PAID') {
-      const transaction = payosData.transactions?.[0];
-
-      if (Number(payosData.amount) !== Number(topup.amount)) {
-        this.logger.error(`Amount mismatch: payOS=${payosData.amount}, local=${topup.amount}, orderCode=${orderCode}`);
-        throw new BadRequestException('Số tiền không khớp');
-      }
-
-      await this.dataSource.transaction(async (manager) => {
-        await this.creditWallet(manager, topup, {
-          reference: transaction?.reference,
-          counterAccountBankName: transaction?.counterAccountBankName,
-          counterAccountName: transaction?.counterAccountName,
-          counterAccountNumber: transaction?.counterAccountNumber,
-          transactionDateTime: transaction?.transactionDateTime,
-        });
-      });
-
-      return true;
-    }
-
-    if (status === 'CANCELLED') {
-      await this.topupRepository
-        .createQueryBuilder()
-        .update(TopupEntity)
-        .set({ status: TopupStatus.CANCELLED })
-        .where('orderCode = :orderCode AND status = :status', {
-          orderCode,
-          status: TopupStatus.PENDING,
-        })
-        .execute();
-      throw new BadRequestException('Giao dịch đã bị huỷ');
-    }
-
-    if (status === 'EXPIRED') {
-      await this.topupRepository
-        .createQueryBuilder()
-        .update(TopupEntity)
-        .set({ status: TopupStatus.EXPIRED })
-        .where('orderCode = :orderCode AND status = :status', {
-          orderCode,
-          status: TopupStatus.PENDING,
-        })
-        .execute();
-      throw new BadRequestException('Giao dịch đã hết hạn');
-    }
-
-    throw new BadRequestException('Thanh toán chưa hoàn tất');
+    return this.syncTopupFromPayos(topup);
   }
 
   async handleWebhook(webhookData: any): Promise<void> {
@@ -302,25 +307,56 @@ export class TopupService {
       return;
     }
 
-    if (data.code === '00') {
-      if (Number(data.amount) !== Number(topup.amount)) {
-        this.logger.error(`Webhook amount mismatch: webhook=${data.amount}, local=${topup.amount}, orderCode=${orderCode}`);
-        return;
-      }
+    const webhookCode = String(webhookData?.code ?? data?.code ?? '');
+    const webhookStatus = String(data?.status ?? '').toUpperCase();
+    const isPaymentSuccess = webhookCode === '00' || webhookStatus === 'PAID';
 
-      await this.dataSource.transaction(async (manager) => {
-        await this.creditWallet(manager, topup, {
-          reference: data.reference,
-          counterAccountBankName: data.counterAccountBankName,
-          counterAccountName: data.counterAccountName,
-          counterAccountNumber: data.counterAccountNumber,
-          transactionDateTime: data.transactionDateTime,
-        });
-      });
+    if (!isPaymentSuccess) {
+      this.logger.log(
+        `Webhook ignored for orderCode=${orderCode}: code=${webhookCode || 'N/A'}, status=${webhookStatus || 'N/A'}`,
+      );
+      return;
     }
+
+    if (Number(data.amount) !== Number(topup.amount)) {
+      this.logger.error(`Webhook amount mismatch: webhook=${data.amount}, local=${topup.amount}, orderCode=${orderCode}`);
+      return;
+    }
+
+    await this.dataSource.transaction(async (manager) => {
+      await this.creditWallet(manager, topup, {
+        reference: data.reference,
+        counterAccountBankName: data.counterAccountBankName,
+        counterAccountName: data.counterAccountName,
+        counterAccountNumber: data.counterAccountNumber,
+        transactionDateTime: data.transactionDateTime,
+      });
+    });
   }
 
   async getTopupHistory(userId: string): Promise<TopupEntity[]> {
+    const history = await this.topupRepository.find({
+      where: { userId },
+      order: { createdAt: 'DESC' },
+    });
+
+    const pendingTopups = history.filter((topup) => topup.status === TopupStatus.PENDING);
+    if (pendingTopups.length === 0) return history;
+
+    let hasChanged = false;
+    for (const topup of pendingTopups) {
+      try {
+        const result = await this.syncTopupFromPayos(topup);
+        if (result !== 'PENDING') hasChanged = true;
+      } catch (error) {
+        this.logger.warn(
+          `Skip topup sync orderCode=${topup.orderCode}: ${(error as Error).message}`,
+        );
+      }
+    }
+
+    if (!hasChanged) return history;
+
     return this.topupRepository.find({
       where: { userId },
       order: { createdAt: 'DESC' },
@@ -344,19 +380,28 @@ export class TopupService {
     const apiKey = this.configService.get<string>('PAYOS_API_KEY', '');
     const clientId = this.configService.get<string>('PAYOS_CLIENT_ID', '');
 
-    const res = await this.fetchWithTimeout(`${payosUrl}/v2/payment-requests/${orderCode}`, {
+    const res = await this.fetchWithTimeout(`${payosUrl}/v2/payment-requests/${orderCode}/cancel`, {
       headers: {
         'x-api-key': apiKey,
         'x-client-id': clientId,
         'Content-Type': 'application/json',
       },
-      method: 'DELETE',
+      method: 'POST',
       body: JSON.stringify({ cancellationReason: 'Người dùng huỷ giao dịch' }),
     });
 
     if (!res.ok) {
       const errorBody = await res.text().catch(() => 'Unknown error');
-      this.logger.error(`payOS cancel failed: ${errorBody}, orderCode=${orderCode}`);
+      this.logger.warn(`payOS cancel failed: ${errorBody}, orderCode=${orderCode}`);
+
+      const latestStatus = await this.syncTopupFromPayos(topup);
+      if (latestStatus === 'CANCELLED' || latestStatus === 'EXPIRED') {
+        return;
+      }
+      if (latestStatus === 'PAID') {
+        throw new BadRequestException('Giao dịch đã thanh toán thành công, không thể huỷ');
+      }
+
       throw new BadRequestException('Không thể huỷ giao dịch trên payOS');
     }
 

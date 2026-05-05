@@ -21,4 +21,4 @@ import {
   controllers: [SeatController, SeatKafkaConsumer],
   providers: [SeatService, IdempotencyService],
 })
-export class SeatModule {}
+export class SeatModule { }

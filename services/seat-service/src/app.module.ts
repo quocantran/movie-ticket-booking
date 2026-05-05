@@ -29,4 +29,4 @@ import { OutboxEntity, ProcessedEventEntity } from '@app/common';
     SeatModule,
   ],
 })
-export class AppModule {}
+export class AppModule { }

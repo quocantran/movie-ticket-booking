@@ -1,7 +1,7 @@
 import { Injectable, Inject } from '@nestjs/common';
 import Redis from 'ioredis';
 import { randomUUID } from 'crypto';
-import { REDIS_CLIENT } from './redis.module';
+import { REDIS_CLIENT } from './redis.constants';
 
 @Injectable()
 export class RedisLockService {

@@ -36,6 +36,14 @@ export default function WalletPage({ walletBalance, addToast, onBalanceChange })
 
   useEffect(() => {
     const topupResult = searchParams.get('topup')
+    const orderCode = searchParams.get('orderCode') || ''
+    if (!topupResult) return
+
+    const resultKey = `${topupResult}:${orderCode}`
+    const lastHandledResultKey = sessionStorage.getItem('wallet:lastTopupResult')
+    if (lastHandledResultKey === resultKey) return
+    sessionStorage.setItem('wallet:lastTopupResult', resultKey)
+
     if (topupResult === 'success') {
       addToast('success', '🎉 Nạp tiền thành công! Số dư đã được cập nhật.')
       onBalanceChange?.()
@@ -47,6 +55,14 @@ export default function WalletPage({ walletBalance, addToast, onBalanceChange })
       setSearchParams({}, { replace: true })
     } else if (topupResult === 'cancelled') {
       addToast('info', 'Bạn đã huỷ giao dịch nạp tiền.')
+      fetchHistory()
+      setSearchParams({}, { replace: true })
+    } else if (topupResult === 'expired') {
+      addToast('error', 'Giao dịch nạp tiền đã hết hạn.')
+      fetchHistory()
+      setSearchParams({}, { replace: true })
+    } else if (topupResult === 'pending') {
+      addToast('info', 'Thanh toán chưa hoàn tất, vui lòng kiểm tra lại lịch sử nạp tiền.')
       fetchHistory()
       setSearchParams({}, { replace: true })
     }
@@ -67,7 +83,10 @@ export default function WalletPage({ walletBalance, addToast, onBalanceChange })
     setLoading(false)
 
     if (ok && data?.data?.checkoutUrl) {
-      window.location.href = data.data.checkoutUrl
+      const opened = window.open(data.data.checkoutUrl, '_blank', 'noopener,noreferrer')
+      if (!opened) {
+        addToast('error', 'Trình duyệt đã chặn tab mới. Vui lòng cho phép popup và thử lại.')
+      }
     } else {
       addToast('error', data?.message || 'Tạo link thanh toán thất bại')
     }
