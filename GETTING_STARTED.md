@@ -132,7 +132,7 @@ movie-ticket-booking-system/
 │   ├── booking-service/            # Saga Initiator + JWT Guard (port 5001)
 │   ├── seat-service/               # Pessimistic Locking (port 5002)
 │   ├── movie-service/              # Read API + Admin tạo phim (port 5003)
-│   ├── payment-service/            # Balance check + Wallet API (port 5004)
+│   ├── payment-service/            # Balance check + Wallet API + payOS Top-up (port 5004)
 │   ├── auth-service/               # JWT Auth (login/register/profile) + Wallet creation (port 5005)
 │   └── ai-recommender-service/     # AI recommendations + Kafka consumers (port 5006)
 │
@@ -163,13 +163,14 @@ movie-ticket-booking-system/
 5. Mọi request tiếp theo gửi header `Authorization: Bearer <token>`
 6. Gateway chuyển tiếp header → service đích xác minh JWT
 7. Khi đăng ký → Auth Service tự động gọi Payment Service tạo ví 200,000 ₫
+8. User có thể **nạp thêm tiền vào ví** qua payOS (chuyển khoản ngân hàng / QR)
 
 ### Tài khoản demo (mật khẩu mặc định: `123456`)
 
 | Email | Tên | Số dư | Ghi chú |
 |-------|-----|-------|---------|
 | nguyenvana@email.com | Nguyễn Văn A | 500,000 ₫ | Đủ mua 3-4 vé |
-| tranthib@email.com | Trần Thị B | 50,000 ₫ | **Test PAYMENT_FAILED** |
+| tranthib@email.com | Trần Thị B | 50,000 ₫ | **Test PAYMENT_FAILED** → nạp tiền payOS |
 | levanc@email.com | Lê Văn C | 1,000,000 ₫ | Nhiều tiền |
 | phamthid@email.com | Phạm Thị D | 200,000 ₫ | Vừa đủ 1-2 vé |
 | hoangvane@email.com | Hoàng Văn E | 3,000,000 ₫ | VIP |
@@ -264,6 +265,84 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/bookings/<booking-i
 
 ---
 
+## Test Nạp tiền ví (payOS Top-up)
+
+### Cấu hình payOS
+
+Trước khi test nạp tiền, cần cấu hình payOS keys trong `.env`:
+
+```env
+# Lấy từ https://my.payos.vn → Kênh thanh toán → Thông tin
+PAYOS_URL=https://api-merchant.payos.vn
+PAYOS_CLIENT_ID=<your_client_id>
+PAYOS_API_KEY=<your_api_key>
+PAYOS_CHECKSUM_KEY=<your_checksum_key>
+```
+
+### Kịch bản: Nạp tiền thành công
+
+```bash
+# 1. Đăng nhập
+TOKEN=$(curl -s -X POST http://localhost:8080/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"tranthib@email.com","password":"123456"}' | jq -r '.access_token')
+
+# 2. Kiểm tra số dư hiện tại
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/wallets/me
+# → {"userId":"user-002","balance":50000}
+
+# 3. Tạo link nạp tiền
+curl -X POST http://localhost:8080/topup \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"amount": 100000}'
+# → {"message":"Tạo link thanh toán thành công","data":{"checkoutUrl":"https://pay.payos.vn/...","orderCode":123456789}}
+
+# 4. Mở checkoutUrl trong trình duyệt → quét QR / chuyển khoản
+# 5. Sau khi thanh toán, payOS redirect về /topup/verify/:orderCode → frontend
+
+# 6. Xem lịch sử nạp tiền
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/topup/history
+
+# 7. Huỷ giao dịch (nếu chưa thanh toán)
+curl -X DELETE http://localhost:8080/topup/123456789 \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+**Luồng:**
+```
+POST /topup → payOS checkout → Thanh toán → Verify → Cộng tiền ví
+```
+
+### Nếu DB đã tồn tại (không dùng init-db.sql mới)
+
+```sql
+USE payment_db;
+
+CREATE TABLE IF NOT EXISTS topups (
+    id VARCHAR(36) PRIMARY KEY,
+    user_id VARCHAR(36) NOT NULL,
+    order_code BIGINT NOT NULL UNIQUE,
+    amount DECIMAL(12,2) NOT NULL,
+    status ENUM('PENDING', 'PAID', 'CANCELLED', 'EXPIRED', 'FAILED') DEFAULT 'PENDING',
+    checkout_url VARCHAR(500) NULL,
+    payment_link_id VARCHAR(255) NULL,
+    transaction_reference VARCHAR(255) NULL,
+    counter_account_bank_name VARCHAR(255) NULL,
+    counter_account_name VARCHAR(255) NULL,
+    counter_account_number VARCHAR(255) NULL,
+    paid_at TIMESTAMP NULL,
+    description VARCHAR(255) NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_user_id (user_id),
+    INDEX idx_status (status),
+    INDEX idx_order_code (order_code)
+);
+```
+
+---
+
 ## Using Make (optional)
 
 ```bash
@@ -290,12 +369,12 @@ make clean     # Remove everything
 - [x] Movie Service — REST read API + ADMIN tạo phim (phát `MOVIE_CREATED`)
 - [x] Booking Service — REST + Kafka Consumer (saga initiator) + JWT Guard
 - [x] Seat Service — Kafka Consumer + Pessimistic Locking + REST API ghế
-- [x] Payment Service — Kafka Consumer + Balance Check + Wallet API (balance + creation)
+- [x] Payment Service — Kafka Consumer + Balance Check + Wallet API + **payOS Top-up**
 - [x] Auth Service — JWT Auth (login/register/profile) + auto-create wallet
 - [x] AI Recommender Service — Kafka Consumer + AI Scoring (Cosine + Jaccard + Bonus Tiers)
-- [x] API Gateway — HTTP Proxy routing + JWT Forwarding + All routes
+- [x] API Gateway — HTTP Proxy routing + JWT Forwarding + All routes + **Top-up proxy**
 - [x] Frontend — React + Vite UI (modular: utils, constants, components, pages)
-- [x] Database init + seed data scripts (6 databases)
+- [x] Database init + seed data scripts (6 databases + topups table)
 - [x] Docker Compose orchestration
 - [x] Service readme.md files updated
 - [x] Frontend `.env.local.example` created

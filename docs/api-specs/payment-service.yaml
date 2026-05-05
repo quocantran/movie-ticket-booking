@@ -1,16 +1,23 @@
 # ============================================
 # Payment Service — OpenAPI 3.0 Specification
-# Dịch vụ xử lý thanh toán + quản lý ví
+# Dịch vụ xử lý thanh toán + quản lý ví + nạp tiền payOS
 # ============================================
 openapi: 3.0.3
 info:
   title: Payment Service API
   description: |
-    API đặc tả cho Payment Service — dịch vụ xử lý thanh toán và quản lý ví.
+    API đặc tả cho Payment Service — dịch vụ xử lý thanh toán, quản lý ví, và nạp tiền qua payOS.
 
-    **REST API:**
+    **REST API — Wallet:**
     - `GET /wallets/me` — Xem số dư ví của user hiện tại (yêu cầu JWT)
     - `POST /wallets` — Tạo ví cho user mới (gọi nội bộ bởi Auth Service sau khi đăng ký)
+
+    **REST API — Top-up (payOS):**
+    - `POST /topup` — Tạo link nạp tiền qua payOS (yêu cầu JWT)
+    - `GET /topup/verify/:orderCode` — Xác nhận thanh toán payOS (redirect callback)
+    - `POST /topup/webhook` — Webhook nhận thông tin thanh toán real-time từ payOS
+    - `GET /topup/history` — Lấy lịch sử nạp tiền (yêu cầu JWT)
+    - `DELETE /topup/:orderCode` — Huỷ giao dịch nạp tiền (yêu cầu JWT)
 
     **Cơ chế thanh toán (Kafka event-driven):**
     - Khi nhận sự kiện SEATS_RESERVED, Payment Service kiểm tra số dư user:
@@ -98,6 +105,174 @@ paths:
               schema:
                 $ref: '#/components/schemas/CreateWalletResponse'
 
+  /topup:
+    post:
+      summary: Tạo link nạp tiền qua payOS
+      description: |
+        Tạo link thanh toán payOS cho user. Trả về checkoutUrl để redirect user đến trang thanh toán payOS.
+        Cơ chế: tạo orderCode (9 chữ số), tính HMAC_SHA256 signature, gọi payOS API,
+        lưu TopupEntity (PENDING), trả checkoutUrl cho frontend.
+      operationId: createTopup
+      tags:
+        - Top-up
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [amount]
+              properties:
+                amount:
+                  type: integer
+                  minimum: 1000
+                  description: Số tiền nạp (VNĐ), tối thiểu 1,000
+                  example: 50000
+      responses:
+        '201':
+          description: Tạo link thanh toán thành công
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Tạo link thanh toán thành công"
+                  data:
+                    type: object
+                    properties:
+                      checkoutUrl:
+                        type: string
+                        format: uri
+                        description: Link thanh toán payOS
+                        example: "https://pay.payos.vn/web/abc123"
+                      orderCode:
+                        type: integer
+                        description: Mã đơn hàng (9 chữ số)
+                        example: 123456789
+        '400':
+          description: Số tiền không hợp lệ
+        '401':
+          description: Token không hợp lệ hoặc thiếu
+
+  /topup/verify/{orderCode}:
+    get:
+      summary: Xác nhận thanh toán payOS (redirect callback)
+      description: |
+        Endpoint nhận redirect từ payOS sau khi user thanh toán.
+        Gọi payOS API kiểm tra trạng thái:
+        - PAID → cộng tiền vào wallet (DB transaction) → redirect frontend?topup=success
+        - CANCELLED/EXPIRED → cập nhật trạng thái → redirect frontend?topup=failed
+      operationId: verifyTopup
+      tags:
+        - Top-up
+      parameters:
+        - name: orderCode
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: Mã đơn hàng (orderCode)
+          example: 123456789
+      responses:
+        '302':
+          description: Redirect về frontend với kết quả thanh toán
+
+  /topup/webhook:
+    post:
+      summary: Webhook nhận thông tin thanh toán từ payOS
+      description: |
+        payOS gửi POST request khi giao dịch thành công.
+        Dữ liệu bao gồm: orderCode, amount, reference, counterAccountBankName,
+        counterAccountName, counterAccountNumber, transactionDateTime.
+        Nếu code = '00' → cộng tiền vào wallet.
+      operationId: handleTopupWebhook
+      tags:
+        - Top-up
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PayOSWebhook'
+      responses:
+        '200':
+          description: Webhook xử lý thành công
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+
+  /topup/history:
+    get:
+      summary: Lấy lịch sử nạp tiền
+      description: Trả về danh sách giao dịch nạp tiền của user, sắp xếp mới nhất trước.
+      operationId: getTopupHistory
+      tags:
+        - Top-up
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Danh sách lịch sử nạp tiền
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Lịch sử nạp tiền"
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Topup'
+        '401':
+          description: Token không hợp lệ hoặc thiếu
+
+  /topup/{orderCode}:
+    delete:
+      summary: Huỷ giao dịch nạp tiền
+      description: |
+        Huỷ giao dịch nạp tiền đang ở trạng thái PENDING.
+        Gọi payOS API DELETE /v2/payment-requests/:orderCode để huỷ link thanh toán.
+      operationId: cancelTopup
+      tags:
+        - Top-up
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: orderCode
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: Mã đơn hàng (orderCode)
+      responses:
+        '200':
+          description: Huỷ giao dịch thành công
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Huỷ giao dịch thành công"
+        '400':
+          description: Giao dịch không ở trạng thái PENDING
+        '401':
+          description: Token không hợp lệ hoặc thiếu
+        '404':
+          description: Không tìm thấy giao dịch
+
 components:
   securitySchemes:
     BearerAuth:
@@ -170,3 +345,149 @@ components:
         updatedAt:
           type: string
           format: date-time
+
+    Topup:
+      type: object
+      description: Bản ghi nạp tiền qua payOS
+      properties:
+        id:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          format: uuid
+        orderCode:
+          type: integer
+          description: Mã đơn hàng (9 chữ số)
+          example: 123456789
+        amount:
+          type: number
+          format: decimal
+          description: Số tiền nạp (VNĐ)
+          example: 50000
+        status:
+          type: string
+          enum:
+            - PENDING
+            - PAID
+            - CANCELLED
+            - EXPIRED
+            - FAILED
+          description: |
+            - PENDING: Chờ thanh toán
+            - PAID: Đã thanh toán thành công
+            - CANCELLED: Đã huỷ
+            - EXPIRED: Link thanh toán hết hạn
+            - FAILED: Thanh toán thất bại
+        checkoutUrl:
+          type: string
+          format: uri
+          nullable: true
+          description: Link thanh toán payOS
+        paymentLinkId:
+          type: string
+          nullable: true
+          description: Mã link thanh toán payOS
+        transactionReference:
+          type: string
+          nullable: true
+          description: Mã tham chiếu giao dịch ngân hàng
+        counterAccountBankName:
+          type: string
+          nullable: true
+          description: Tên ngân hàng khách hàng dùng chuyển khoản
+        counterAccountName:
+          type: string
+          nullable: true
+          description: Tên tài khoản khách hàng
+        counterAccountNumber:
+          type: string
+          nullable: true
+          description: Số tài khoản khách hàng
+        paidAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Thời gian giao dịch thành công
+        description:
+          type: string
+          nullable: true
+          description: Mô tả giao dịch (= orderCode)
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    PayOSWebhook:
+      type: object
+      description: Dữ liệu webhook từ payOS khi giao dịch thanh toán hoàn tất
+      properties:
+        code:
+          type: string
+          description: Mã lỗi (00 = thành công)
+        desc:
+          type: string
+          description: Thông tin lỗi
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            orderCode:
+              type: integer
+              description: Mã đơn hàng từ cửa hàng
+            amount:
+              type: integer
+              description: Số tiền thanh toán
+            description:
+              type: string
+              description: Mô tả thanh toán
+            accountNumber:
+              type: string
+              description: Số tài khoản cửa hàng
+            reference:
+              type: string
+              description: Mã tham chiếu giao dịch
+            transactionDateTime:
+              type: string
+              description: Ngày giờ giao dịch thành công
+            currency:
+              type: string
+              description: Đơn vị tiền tệ
+              example: VND
+            paymentLinkId:
+              type: string
+              description: Mã link thanh toán
+            code:
+              type: string
+              description: Mã lỗi của giao dịch
+            desc:
+              type: string
+              description: Thông tin lỗi giao dịch
+            counterAccountBankId:
+              type: string
+              nullable: true
+              description: Mã ngân hàng khách hàng
+            counterAccountBankName:
+              type: string
+              nullable: true
+              description: Tên ngân hàng khách hàng
+            counterAccountName:
+              type: string
+              nullable: true
+              description: Tên tài khoản khách hàng
+            counterAccountNumber:
+              type: string
+              nullable: true
+              description: Số tài khoản khách hàng
+            virtualAccountName:
+              type: string
+              nullable: true
+            virtualAccountNumber:
+              type: string
+              nullable: true
+        signature:
+          type: string
+          description: Chữ ký xác minh

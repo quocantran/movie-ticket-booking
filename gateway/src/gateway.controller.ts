@@ -113,6 +113,33 @@ export class GatewayController {
     await this.proxy(req, res, this.paymentServiceUrl, '/wallets/me');
   }
 
+  @All('topup/verify/:orderCode')
+  async proxyTopupVerify(@Req() req: Request, @Res() res: Response) {
+    const orderCode = req.params.orderCode;
+    await this.proxyRedirect(req, res, this.paymentServiceUrl, `/topup/verify/${orderCode}`);
+  }
+
+  @All('topup/webhook')
+  async proxyTopupWebhook(@Req() req: Request, @Res() res: Response) {
+    await this.proxy(req, res, this.paymentServiceUrl, '/topup/webhook');
+  }
+
+  @All('topup/history')
+  async proxyTopupHistory(@Req() req: Request, @Res() res: Response) {
+    await this.proxy(req, res, this.paymentServiceUrl, '/topup/history');
+  }
+
+  @All('topup/:orderCode')
+  async proxyTopupByOrderCode(@Req() req: Request, @Res() res: Response) {
+    const orderCode = req.params.orderCode;
+    await this.proxy(req, res, this.paymentServiceUrl, `/topup/${orderCode}`);
+  }
+
+  @All('topup')
+  async proxyTopup(@Req() req: Request, @Res() res: Response) {
+    await this.proxy(req, res, this.paymentServiceUrl, '/topup');
+  }
+
   @All('recommendations/grouped')
   async proxyRecommendationsGrouped(@Req() req: Request, @Res() res: Response) {
     const queryString = req.url.includes('?') ? req.url.substring(req.url.indexOf('?')) : '';
@@ -146,6 +173,45 @@ export class GatewayController {
       }
 
       const response = await fetch(url, fetchOptions);
+      const data = await response.json().catch(() => null);
+      res.status(response.status).json(data);
+    } catch {
+      res.status(502).json({
+        statusCode: 502,
+        message: 'Không thể kết nối đến dịch vụ',
+        error: 'Bad Gateway',
+      });
+    }
+  }
+
+  private async proxyRedirect(
+    req: Request,
+    res: Response,
+    targetBaseUrl: string,
+    targetPath: string,
+  ) {
+    const url = `${targetBaseUrl}${targetPath}`;
+
+    try {
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+
+      if (req.headers.authorization) {
+        headers['Authorization'] = req.headers.authorization;
+      }
+
+      const response = await fetch(url, {
+        method: req.method,
+        headers,
+        redirect: 'manual',
+      });
+
+      const location = response.headers.get('location');
+      if (location) {
+        return res.redirect(location);
+      }
+
       const data = await response.json().catch(() => null);
       res.status(response.status).json(data);
     } catch {

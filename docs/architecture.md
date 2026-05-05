@@ -36,7 +36,7 @@ Chọn các mô hình kiến trúc dựa trên phân tích nghiệp vụ/kỹ th
 | **Booking Service** | Quản lý vòng đời đặt vé, khởi tạo saga, tiêu thụ sự kiện kết quả từ Kafka | NestJS + TypeORM + Kafka | 5001 |
 | **Seat Service** | Quản lý kho ghế theo suất chiếu, giữ/giải phóng ghế, cung cấp API đọc trạng thái ghế | NestJS + TypeORM + Kafka | 5002 |
 | **Movie Service** | Quản lý danh mục phim và suất chiếu (API đọc + Admin tạo phim), phát sự kiện MOVIE_CREATED | NestJS + TypeORM | 5003 |
-| **Payment Service** | Xử lý thanh toán dựa trên số dư ví (wallet), API xem số dư và tạo ví | NestJS + TypeORM + Kafka | 5004 |
+| **Payment Service** | Xử lý thanh toán dựa trên số dư ví (wallet), API xem số dư, tạo ví, **nạp tiền qua payOS** | NestJS + TypeORM + Kafka + payOS | 5004 |
 | **Auth Service** | Xác thực JWT (đăng nhập/đăng ký/profile), quản lý tài khoản người dùng | NestJS + TypeORM + JWT | 5005 |
 | **AI Recommender Service** | Gợi ý phim dựa trên AI (60% Cosine Similarity + 40% Jaccard Similarity + bonus tiers). Sử dụng mô hình all-MiniLM-L6-v2 | NestJS + TypeORM + Kafka + Transformers | 5006 |
 | **MySQL** | 6 cơ sở dữ liệu riêng biệt — mỗi dịch vụ một DB | MySQL 8.0 | 3306 |
@@ -53,12 +53,13 @@ Chọn các mô hình kiến trúc dựa trên phân tích nghiệp vụ/kỹ th
 | Từ → Đến | Booking Service | Seat Service | Movie Service | Payment Service | Auth Service | AI Recommender | Kafka | Database |
 |-----------|-----------------|--------------|---------------|-----------------|--------------|----------------|-------|----------|
 | **Frontend** | — | — | — | — | — | — | — | — |
-| **Gateway** | HTTP (REST) | HTTP (REST: seats) | HTTP (REST) | HTTP (REST: wallets/me) | HTTP (REST: Auth) | HTTP (REST: recommendations) | — | — |
+| **Gateway** | HTTP (REST) | HTTP (REST: seats) | HTTP (REST) | HTTP (REST: wallets/me, topup) | HTTP (REST: Auth) | HTTP (REST: recommendations) | — | — |
 | **Booking Service** | — | — | — | — | — | — | Phát: `booking.events` / Nhận: `seat.events`, `payment.events` | `booking_db` |
 | **Seat Service** | — | — | — | — | — | — | Phát: `seat.events` / Nhận: `booking.events`, `payment.events` | `seat_db` |
 | **Movie Service** | — | — | — | — | — | — | Phát: `movie.events` | `movie_db` |
 | **Auth Service** | — | — | — | HTTP (internal) | — | — | — | `auth_db` |
 | **Payment Service** | — | — | — | — | — | — | Phát: `payment.events` / Nhận: `seat.events` | `payment_db` |
+| **Payment Service** | — | — | — | HTTP (payOS API) | — | — | — | — |
 | **AI Recommender** | — | — | HTTP (fetch movies) | — | — | — | Nhận: `movie.events`, `booking.events` | `ai_db` |
 | **Debezium** | — | — | — | — | — | — | Phát sự kiện CDC | Đọc binlog từ các DB có outbox publisher (`booking_db`, `seat_db`, `payment_db`, `movie_db`) |
 
@@ -69,9 +70,10 @@ Chọn các mô hình kiến trúc dựa trên phân tích nghiệp vụ/kỹ th
 - Frontend → Gateway → Movie Service (duyệt phim, suất chiếu, Admin tạo phim) — public/ADMIN
 - Frontend → Gateway → Auth Service (đăng nhập/đăng ký/profile) — auth endpoints
 - Frontend → Gateway → Seat Service (xem trạng thái ghế theo suất chiếu) — public
-- Frontend → Gateway → Payment Service (xem số dư ví) — yêu cầu JWT
+- Frontend → Gateway → Payment Service (xem số dư ví, **nạp tiền payOS**, lịch sử nạp) — yêu cầu JWT
 - Frontend → Gateway → AI Recommender Service (gợi ý phim theo sections) — yêu cầu JWT
 - Auth Service → Payment Service (tạo ví khi đăng ký user mới) — internal HTTP
+- Payment Service → **payOS** (tạo link thanh toán, kiểm tra trạng thái, huỷ giao dịch) — external HTTPS
 - AI Recommender Service → Movie Service (fetch danh sách phim khi seed embeddings) — internal HTTP
 
 **Bất đồng bộ (Asynchronous — Kafka Events):**
@@ -80,7 +82,7 @@ Chọn các mô hình kiến trúc dựa trên phân tích nghiệp vụ/kỹ th
 - Payment Service → (outbox → Debezium CDC) → Kafka `payment.events` → Booking Service, Seat Service
 - Movie Service → (outbox → Debezium CDC) → Kafka `movie.events` → AI Recommender Service
 
-> **Quan trọng:** Các dịch vụ saga KHÔNG gọi HTTP trực tiếp lẫn nhau. Tất cả giao tiếp giữa Booking, Seat, Payment đều qua Kafka events. Ngoại lệ: Auth Service gọi Payment Service khi đăng ký để tạo ví; AI Recommender Service gọi Movie Service khi khởi động để seed embeddings.
+> **Quan trọng:** Các dịch vụ saga KHÔNG gọi HTTP trực tiếp lẫn nhau. Tất cả giao tiếp giữa Booking, Seat, Payment đều qua Kafka events. Ngoại lệ: Auth Service gọi Payment Service khi đăng ký để tạo ví; Payment Service gọi payOS để xử lý nạp tiền; AI Recommender Service gọi Movie Service khi khởi động để seed embeddings.
 
 ---
 
@@ -130,6 +132,7 @@ graph TB
     GW -->|"REST (Auth)"| AS
     GW -->|"REST (seats)"| SS
     GW -->|"REST (AI)"| AI
+    PS -.->|"payOS API"| PO["payOS Gateway"]
 
     BS --> DB1
     SS --> DB2
@@ -230,6 +233,41 @@ sequenceDiagram
     Note over BS: Đơn đặt vé bị hủy
 ```
 
+### 4.4 Sơ đồ luồng Nạp tiền ví (payOS Top-up)
+
+```mermaid
+sequenceDiagram
+    participant KH as Khách hàng
+    participant GW as Gateway
+    participant PS as Payment Service
+    participant DB4 as payment_db
+    participant PO as payOS
+    participant BK as Ngân hàng
+
+    KH->>GW: POST /topup {amount} + Bearer token
+    GW->>PS: Proxy
+    PS->>PS: Xác minh JWT → lấy userId
+    PS->>PS: Tạo orderCode + HMAC_SHA256 signature
+    PS->>PO: POST /v2/payment-requests
+    PO-->>PS: {checkoutUrl, paymentLinkId, status: PENDING}
+    PS->>DB4: INSERT topup (PENDING)
+    PS-->>KH: {checkoutUrl, orderCode}
+
+    KH->>PO: Mở checkoutUrl → Quét QR / Chuyển khoản
+    BK-->>PO: Xác nhận giao dịch thành công
+
+    PO->>GW: Redirect → /topup/verify/:orderCode
+    GW->>PS: proxyRedirect
+    PS->>PO: GET /v2/payment-requests/:orderCode
+    PO-->>PS: {status: "PAID", amount, transactions}
+    PS->>DB4: UPDATE topup (PAID) + bank details
+    PS->>DB4: UPDATE wallet.balance += amount
+    PS-->>GW: 302 Redirect → frontend?topup=success
+    GW-->>KH: Redirect → frontend
+
+    Note over PS,PO: Webhook (bổ sung): payOS cũng gửi POST /topup/webhook nếu cấu hình
+```
+
 ---
 
 ## 5. Deployment
@@ -309,6 +347,10 @@ graph TD
 | `AI_RECOMMENDER_SERVICE_PORT` | Cổng AI Recommender Service | `5006` |
 | `AI_RECOMMENDER_SERVICE_URL` | URL AI Recommender Service (dùng cho Gateway) | `http://ai-recommender-service:5006` |
 | `MOVIE_SERVICE_URL` | URL Movie Service (dùng cho AI Recommender) | `http://movie-service:5003` |
+| `PAYOS_URL` | URL cổng thanh toán payOS | `https://api-merchant.payos.vn` |
+| `PAYOS_CLIENT_ID` | Client ID kênh thanh toán payOS | (lấy từ my.payos.vn) |
+| `PAYOS_API_KEY` | API Key kênh thanh toán payOS | (lấy từ my.payos.vn) |
+| `PAYOS_CHECKSUM_KEY` | Checksum Key dùng tạo HMAC_SHA256 signature | (lấy từ my.payos.vn) |
 
 ---
 
@@ -399,7 +441,7 @@ movie-ticket-booking-system/
 │   │       ├── services/
 │   │       └── entities/
 │   │
-│   ├── payment-service/                 ← Payment Service NestJS
+│   ├── payment-service/                 ← Payment Service NestJS + payOS
 │   │   ├── Dockerfile
 │   │   ├── readme.md
 │   │   └── src/
@@ -408,9 +450,15 @@ movie-ticket-booking-system/
 │   │       ├── payment.module.ts
 │   │       ├── consumers/
 │   │       ├── services/
+│   │       │   ├── payment.service.ts     ← Saga payment (balance check)
+│   │       │   └── topup.service.ts       ← payOS integration logic
+│   │       ├── controllers/
+│   │       │   ├── payment.controller.ts  ← Wallet REST API
+│   │       │   └── topup.controller.ts    ← payOS Top-up REST API
 │   │       └── entities/
 │   │           ├── wallet.entity.ts     ← Ví tài khoản (user_id + balance)
-│   │           └── payment.entity.ts
+│   │           ├── payment.entity.ts    ← Bản ghi thanh toán (booking)
+│   │           └── topup.entity.ts      ← Bản ghi nạp tiền (payOS)
 │   │
 │   ├── auth-service/                    ← Auth Service NestJS
 │   │   ├── Dockerfile

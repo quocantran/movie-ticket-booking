@@ -1,6 +1,6 @@
 # Hệ thống Đặt vé Xem phim (Movie Ticket Booking System)
 
-> Hệ thống đặt vé xem phim dựa trên kiến trúc microservices, triển khai **Saga Choreography**, **Kafka** giao tiếp hướng sự kiện, **Debezium CDC + Outbox Pattern** phát sự kiện đáng tin cậy, và **Redis Distributed Locking** chống race condition khi giữ ghế.
+> Hệ thống đặt vé xem phim dựa trên kiến trúc microservices, triển khai **Saga Choreography**, **Kafka** giao tiếp hướng sự kiện, **Debezium CDC + Outbox Pattern** phát sự kiện đáng tin cậy, **Redis Distributed Locking** chống race condition khi giữ ghế, và **payOS Payment Gateway** nạp tiền ví qua chuyển khoản ngân hàng.
 
 ## Kiến trúc tổng quan
 
@@ -21,6 +21,7 @@ graph LR
     PS --> DB4[("payment_db")]
     AS --> DB5[("auth_db")]
     AI --> DB6[("ai_db")]
+    PS -.->|"payOS API"| PO["payOS Gateway"]
     AS -.->|"HTTP: create wallet"| PS
     AI -.->|"HTTP: fetch movies"| MS
     MS -.->|"HTTP: generate seats"| SS
@@ -49,7 +50,7 @@ graph LR
 | **Booking Service** | Vòng đời đặt vé, khởi tạo saga | NestJS + TypeORM + Kafka | 5001 |
 | **Seat Service** | Quản lý ghế, Redis Distributed Locking, Hold Timeout | NestJS + TypeORM + Kafka + Redis | 5002 |
 | **Movie Service** | Danh mục phim, quản lý suất chiếu, Admin CRUD | NestJS + TypeORM | 5003 |
-| **Payment Service** | Xử lý thanh toán (ví điện tử), tạo ví tự động | NestJS + TypeORM + Kafka + JWT | 5004 |
+| **Payment Service** | Xử lý thanh toán (ví điện tử), nạp tiền qua payOS, tạo ví tự động | NestJS + TypeORM + Kafka + JWT + payOS | 5004 |
 | **Auth Service** | Xác thực JWT, đăng nhập/đăng ký, tự động tạo ví | NestJS + TypeORM + JWT + bcrypt | 5005 |
 | **AI Recommender** | Gợi ý phim AI (Cosine + Jaccard + Bonus Tiers) | NestJS + TypeORM + Kafka + Transformers | 5006 |
 | **Kafka** | Hàng đợi tin nhắn hướng sự kiện | Apache Kafka (KRaft) | 9092 |
@@ -112,6 +113,38 @@ sequenceDiagram
 | **JWT + RBAC** | Xác thực stateless, phân quyền USER/ADMIN |
 | **AI Recommendation** | Cosine Similarity 60% + Jaccard Similarity 40% + Bonus Tiers |
 | **Aggregated Health Check** | Gateway kiểm tra health tất cả services cùng lúc |
+| **payOS Payment Gateway** | Nạp tiền ví qua chuyển khoản ngân hàng / QR, HMAC_SHA256 signature |
+
+## Luồng nạp tiền ví (payOS Top-up Flow)
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant FE as Frontend
+    participant GW as Gateway
+    participant PS as Payment Service
+    participant PO as payOS
+    participant BK as Ngân hàng
+
+    U->>FE: Chọn nạp tiền (amount)
+    FE->>GW: POST /topup {amount}
+    GW->>PS: Proxy
+    PS->>PS: Tạo orderCode + HMAC_SHA256 signature
+    PS->>PO: POST /v2/payment-requests
+    PO-->>PS: {checkoutUrl, paymentLinkId}
+    PS->>PS: Lưu TopupEntity (PENDING)
+    PS-->>FE: {checkoutUrl}
+    FE->>U: Redirect → checkoutUrl (payOS)
+    U->>PO: Quét QR / Chuyển khoản
+    BK-->>PO: Xác nhận giao dịch
+    PO->>GW: Redirect → /topup/verify/:orderCode
+    GW->>PS: proxyRedirect
+    PS->>PO: GET /v2/payment-requests/:orderCode
+    PO-->>PS: {status: "PAID", transactions}
+    PS->>PS: Cộng tiền wallet (DB transaction)
+    PS-->>GW: Redirect → frontend?topup=success
+    GW-->>U: Redirect → frontend
+```
 
 ## Khởi chạy
 
@@ -157,7 +190,18 @@ curl http://localhost:8080/health/all
 │   ├── booking-service/     # Saga orchestration, đặt vé
 │   ├── seat-service/        # Redis locking, giữ ghế, timeout
 │   ├── movie-service/       # CRUD phim, tạo suất chiếu
-│   ├── payment-service/     # Thanh toán ví điện tử
+│   ├── payment-service/     # Thanh toán ví + Nạp tiền payOS
+│   │   └── src/
+│   │       ├── entities/
+│   │       │   ├── wallet.entity.ts   # Ví tài khoản
+│   │       │   ├── payment.entity.ts  # Thanh toán booking
+│   │       │   └── topup.entity.ts    # Nạp tiền payOS
+│   │       ├── controllers/
+│   │       │   ├── payment.controller.ts  # Wallet API
+│   │       │   └── topup.controller.ts    # Top-up API
+│   │       └── services/
+│   │           ├── payment.service.ts     # Saga payment
+│   │           └── topup.service.ts       # payOS integration
 │   ├── auth-service/        # JWT authentication
 │   └── ai-recommender-service/ # AI gợi ý phim
 ├── gateway/                 # API Gateway + Aggregated Health

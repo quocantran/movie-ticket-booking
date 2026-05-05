@@ -184,6 +184,27 @@ CREATE TABLE IF NOT EXISTS payments (
     INDEX idx_status (status)
 );
 
+CREATE TABLE IF NOT EXISTS topups (
+    id VARCHAR(36) PRIMARY KEY,
+    user_id VARCHAR(36) NOT NULL,
+    order_code BIGINT NOT NULL UNIQUE,
+    amount DECIMAL(12,2) NOT NULL,
+    status ENUM('PENDING', 'PAID', 'CANCELLED', 'EXPIRED', 'FAILED') DEFAULT 'PENDING',
+    checkout_url VARCHAR(500) NULL,
+    payment_link_id VARCHAR(255) NULL,
+    transaction_reference VARCHAR(255) NULL,
+    counter_account_bank_name VARCHAR(255) NULL,
+    counter_account_name VARCHAR(255) NULL,
+    counter_account_number VARCHAR(255) NULL,
+    paid_at TIMESTAMP NULL,
+    description VARCHAR(255) NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_user_id (user_id),
+    INDEX idx_status (status),
+    INDEX idx_order_code (order_code)
+);
+
 CREATE TABLE IF NOT EXISTS outbox (
     id VARCHAR(36) PRIMARY KEY,
     aggregate_type VARCHAR(255) NOT NULL,

@@ -10,6 +10,7 @@ export default function Header({ user, walletBalance, onLogout }) {
   const isBookingsActive = pathname === '/bookings' || pathname.startsWith('/bookings/')
   const isRecommendationsActive = pathname === '/recommendations'
   const isCreateMovieActive = pathname === '/movies/new'
+  const isWalletActive = pathname === '/wallet'
 
   return (
     <header className="header">
@@ -42,6 +43,20 @@ export default function Header({ user, walletBalance, onLogout }) {
             Đơn đặt vé
           </Link>
 
+          {!isAdmin && (
+            <Link
+              to="/wallet"
+              className={`nav-tab ${isWalletActive ? 'active' : ''}`}
+              style={{
+                background: isWalletActive ? 'rgba(16, 185, 129, 0.1)' : undefined,
+                borderColor: isWalletActive ? 'var(--success)' : undefined,
+                color: isWalletActive ? 'var(--success)' : undefined,
+              }}
+            >
+              💰 Ví
+            </Link>
+          )}
+
           {isAdmin && (
             <Link
               to="/movies/new"
@@ -59,18 +74,23 @@ export default function Header({ user, walletBalance, onLogout }) {
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           {walletBalance !== null && (
-            <span style={{
-              fontSize: '0.82rem',
-              color: 'var(--success)',
-              background: 'rgba(16, 185, 129, 0.1)',
-              border: '1px solid rgba(16, 185, 129, 0.25)',
-              padding: '4px 10px',
-              borderRadius: 20,
-              fontWeight: 600,
-              letterSpacing: '0.01em',
-            }}>
+            <Link
+              to="/wallet"
+              style={{
+                fontSize: '0.82rem',
+                color: 'var(--success)',
+                background: 'rgba(16, 185, 129, 0.1)',
+                border: '1px solid rgba(16, 185, 129, 0.25)',
+                padding: '4px 10px',
+                borderRadius: 20,
+                fontWeight: 600,
+                letterSpacing: '0.01em',
+                textDecoration: 'none',
+                transition: 'all 0.2s',
+              }}
+            >
               💰 {formatVND(walletBalance)}
-            </span>
+            </Link>
           )}
 
           <span style={{
@@ -108,3 +128,4 @@ export default function Header({ user, walletBalance, onLogout }) {
     </header>
   )
 }
+

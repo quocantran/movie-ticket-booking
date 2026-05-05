@@ -13,6 +13,7 @@ import BookingsPage from './pages/BookingsPage'
 import CreateMoviePage from './pages/CreateMoviePage'
 import CreateShowtimePage from './pages/CreateShowtimePage'
 import RecommendationsPage from './pages/RecommendationsPage'
+import WalletPage from './pages/WalletPage'
 
 export default function App() {
   const [user, setUser] = useState(null)
@@ -159,10 +160,22 @@ export default function App() {
           )}
 
           {user?.role !== 'ADMIN' && (
-            <Route
-              path="/recommendations"
-              element={<RecommendationsPage onSelectMovie={handleSelectMovie} />}
-            />
+            <>
+              <Route
+                path="/recommendations"
+                element={<RecommendationsPage onSelectMovie={handleSelectMovie} />}
+              />
+              <Route
+                path="/wallet"
+                element={
+                  <WalletPage
+                    walletBalance={walletBalance}
+                    addToast={addToast}
+                    onBalanceChange={fetchWalletBalance}
+                  />
+                }
+              />
+            </>
           )}
 
           <Route path="*" element={<Navigate to="/movies" replace />} />

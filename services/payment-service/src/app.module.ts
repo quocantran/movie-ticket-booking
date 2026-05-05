@@ -4,6 +4,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { PaymentModule } from './payment.module';
 import { WalletEntity } from './entities/wallet.entity';
 import { PaymentEntity } from './entities/payment.entity';
+import { TopupEntity } from './entities/topup.entity';
 import { OutboxEntity, ProcessedEventEntity } from '@app/common';
 
 @Module({
@@ -22,7 +23,7 @@ import { OutboxEntity, ProcessedEventEntity } from '@app/common';
         username: configService.get<string>('DB_USERNAME', 'root'),
         password: configService.get<string>('DB_PASSWORD', '123456'),
         database: 'payment_db',
-        entities: [WalletEntity, PaymentEntity, OutboxEntity, ProcessedEventEntity],
+        entities: [WalletEntity, PaymentEntity, TopupEntity, OutboxEntity, ProcessedEventEntity],
         synchronize: false,
         logging: configService.get<string>('DB_LOGGING', 'false') === 'true',
       }),

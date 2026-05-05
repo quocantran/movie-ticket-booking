@@ -11,6 +11,11 @@
 | `/movies*` | Movie Service | 5003 | ❌ Public (POST yêu cầu ADMIN) |
 | `/seats*` | Seat Service | 5002 | ❌ Public |
 | `/wallets/me` | Payment Service | 5004 | ✅ JWT forwarded |
+| `/topup` | Payment Service | 5004 | ✅ JWT forwarded |
+| `/topup/verify/:orderCode` | Payment Service | 5004 | ❌ Public (payOS redirect) |
+| `/topup/webhook` | Payment Service | 5004 | ❌ Public (payOS webhook) |
+| `/topup/history` | Payment Service | 5004 | ✅ JWT forwarded |
+| `/topup/:orderCode` | Payment Service | 5004 | ✅ JWT forwarded |
 | `/recommendations/grouped` | AI Recommender Service | 5006 | ✅ JWT forwarded |
 | `/health` | Self | — | ❌ |
 
