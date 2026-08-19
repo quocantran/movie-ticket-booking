@@ -14,3 +14,7 @@ export * from './auth/roles.guard';
 export * from './redis/redis.module';
 export * from './redis/redis-lock.service';
 export * from './redis/redis.constants';
+
+export * from './metrics/metrics.module';
+export * from './metrics/metrics.service';
+export * from './metrics/metrics.interceptor';

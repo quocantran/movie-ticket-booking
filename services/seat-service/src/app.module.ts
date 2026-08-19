@@ -3,7 +3,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { SeatModule } from './seat.module';
 import { SeatEntity } from './entities/seat.entity';
-import { OutboxEntity, ProcessedEventEntity } from '@app/common';
+import { OutboxEntity, ProcessedEventEntity, MetricsModule } from '@app/common';
 
 @Module({
   imports: [
@@ -27,6 +27,7 @@ import { OutboxEntity, ProcessedEventEntity } from '@app/common';
       }),
     }),
     SeatModule,
+    MetricsModule.forRoot('seat-service'),
   ],
 })
 export class AppModule { }

@@ -4,7 +4,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { MovieModule } from './movie.module';
 import { MovieEntity } from './entities/movie.entity';
 import { ShowtimeEntity } from './entities/showtime.entity';
-import { OutboxEntity, ProcessedEventEntity } from '@app/common';
+import { OutboxEntity, ProcessedEventEntity, MetricsModule } from '@app/common';
 
 @Module({
   imports: [
@@ -28,6 +28,7 @@ import { OutboxEntity, ProcessedEventEntity } from '@app/common';
       }),
     }),
     MovieModule,
+    MetricsModule.forRoot('movie-service'),
   ],
 })
 export class AppModule {}

@@ -5,7 +5,7 @@ import { PaymentModule } from './payment.module';
 import { WalletEntity } from './entities/wallet.entity';
 import { PaymentEntity } from './entities/payment.entity';
 import { TopupEntity } from './entities/topup.entity';
-import { OutboxEntity, ProcessedEventEntity } from '@app/common';
+import { OutboxEntity, ProcessedEventEntity, MetricsModule } from '@app/common';
 
 @Module({
   imports: [
@@ -29,6 +29,7 @@ import { OutboxEntity, ProcessedEventEntity } from '@app/common';
       }),
     }),
     PaymentModule,
+    MetricsModule.forRoot('payment-service'),
   ],
 })
 export class AppModule {}

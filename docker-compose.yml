@@ -272,6 +272,166 @@ services:
     networks:
       - app-network
 
+  # ═══════════════════════════════════════════════════
+  #  MONITORING STACK (monitoring profile)
+  # ═══════════════════════════════════════════════════
+
+  prometheus:
+    profiles: ["monitoring"]
+    image: prom/prometheus:v2.53.0
+    container_name: movie-booking-prometheus
+    hostname: prometheus
+    ports:
+      - '9090:9090'
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+      - "gateway:host-gateway"
+      - "auth-service:host-gateway"
+      - "booking-service:host-gateway"
+      - "seat-service:host-gateway"
+      - "movie-service:host-gateway"
+      - "payment-service:host-gateway"
+      - "ai-recommender-service:host-gateway"
+      - "alertmanager:host-gateway"
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/prometheus/alert-rules.yml:/etc/prometheus/alert-rules.yml.template:ro
+      - prometheus_data:/prometheus
+    environment:
+      ALERT_CPU_THRESHOLD: ${ALERT_CPU_THRESHOLD:-80}
+      ALERT_RAM_THRESHOLD: ${ALERT_RAM_THRESHOLD:-80}
+      ALERT_DISK_THRESHOLD: ${ALERT_DISK_THRESHOLD:-85}
+      ALERT_5XX_RATE_THRESHOLD: ${ALERT_5XX_RATE_THRESHOLD:-0.05}
+      ALERT_LATENCY_P95_THRESHOLD: ${ALERT_LATENCY_P95_THRESHOLD:-3}
+      ALERT_CONTAINER_CPU_THRESHOLD: ${ALERT_CONTAINER_CPU_THRESHOLD:-80}
+      ALERT_CONTAINER_RAM_THRESHOLD: ${ALERT_CONTAINER_RAM_THRESHOLD:-85}
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        sed -e "s|__ALERT_CPU_THRESHOLD__|$${ALERT_CPU_THRESHOLD:-80}|g" \
+            -e "s|__ALERT_RAM_THRESHOLD__|$${ALERT_RAM_THRESHOLD:-80}|g" \
+            -e "s|__ALERT_DISK_THRESHOLD__|$${ALERT_DISK_THRESHOLD:-85}|g" \
+            -e "s|__ALERT_5XX_RATE_THRESHOLD__|$${ALERT_5XX_RATE_THRESHOLD:-0.05}|g" \
+            -e "s|__ALERT_LATENCY_P95_THRESHOLD__|$${ALERT_LATENCY_P95_THRESHOLD:-3}|g" \
+            -e "s|__ALERT_CONTAINER_CPU_THRESHOLD__|$${ALERT_CONTAINER_CPU_THRESHOLD:-80}|g" \
+            -e "s|__ALERT_CONTAINER_RAM_THRESHOLD__|$${ALERT_CONTAINER_RAM_THRESHOLD:-85}|g" \
+            /etc/prometheus/alert-rules.yml.template > /etc/prometheus/alert-rules.yml
+        exec /bin/prometheus --config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/prometheus --storage.tsdb.retention.time=15d --web.enable-lifecycle
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  grafana:
+    profiles: ["monitoring"]
+    image: grafana/grafana:11.1.0
+    container_name: movie-booking-grafana
+    hostname: grafana
+    ports:
+      - '3001:3000'
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: 'false'
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - prometheus
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  alertmanager:
+    profiles: ["monitoring"]
+    image: prom/alertmanager:v0.27.0
+    container_name: movie-booking-alertmanager
+    hostname: alertmanager
+    ports:
+      - '9093:9093'
+    volumes:
+      - ./monitoring/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    environment:
+      SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-https://hooks.slack.com/services/PLACEHOLDER}
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        sed "s|SLACK_WEBHOOK_PLACEHOLDER|$${SLACK_WEBHOOK_URL}|g" /etc/alertmanager/alertmanager.yml > /tmp/alertmanager.yml
+        exec /bin/alertmanager --config.file=/tmp/alertmanager.yml --storage.path=/alertmanager
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  loki:
+    profiles: ["monitoring"]
+    image: grafana/loki:2.9.8
+    container_name: movie-booking-loki
+    hostname: loki
+    ports:
+      - '3100:3100'
+    volumes:
+      - ./monitoring/loki/loki-config.yml:/etc/loki/config.yml:ro
+      - loki_data:/loki
+    command: -config.file=/etc/loki/config.yml
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  promtail:
+    profiles: ["monitoring"]
+    image: grafana/promtail:3.1.0
+    container_name: movie-booking-promtail
+    hostname: promtail
+    environment:
+      DOCKER_API_VERSION: "1.44"
+    volumes:
+      - ./monitoring/promtail/promtail-config.yml:/etc/promtail/config.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    command: -config.file=/etc/promtail/config.yml
+    depends_on:
+      - loki
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  node-exporter:
+    profiles: ["monitoring"]
+    image: prom/node-exporter:v1.8.1
+    container_name: movie-booking-node-exporter
+    hostname: node-exporter
+    ports:
+      - '9100:9100'
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+      - '--path.rootfs=/rootfs'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  cadvisor:
+    profiles: ["monitoring"]
+    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    container_name: movie-booking-cadvisor
+    hostname: cadvisor
+    ports:
+      - '8098:8080'
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+    networks:
+      - app-network
+    restart: unless-stopped
+
 networks:
   app-network:
     driver: bridge
@@ -280,3 +440,7 @@ volumes:
   mysql_data:
   kafka_data:
   redis_data:
+  prometheus_data:
+  grafana_data:
+  loki_data:
+

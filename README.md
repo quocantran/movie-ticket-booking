@@ -57,6 +57,13 @@ graph LR
 | **Debezium** | CDC — bắt thay đổi outbox đẩy vào Kafka | Debezium Connect | 8083 |
 | **Redis** | Distributed Locking cho seat reservation | Redis 7 Alpine | 6379 |
 | **MySQL** | Cơ sở dữ liệu (Database per Service — 6 DB) | MySQL 8 | 3306 |
+| **Prometheus** | Thu thập và lưu trữ time-series metrics | Prometheus v2.53 | 9090 |
+| **Grafana** | Dashboard trực quan hóa metrics & logs | Grafana v11.1 | 3001 |
+| **Alertmanager** | Quản lý và định tuyến cảnh báo tới Slack | Alertmanager v0.27 | 9093 |
+| **Loki** | Quản lý log tập trung cho containers | Grafana Loki v2.9 | 3100 |
+| **Promtail** | Agent gom log từ Docker containers gửi về Loki | Promtail v3.1 | - |
+| **cAdvisor** | Thu thập tài nguyên CPU/RAM/Network containers | Google cAdvisor v0.49 | 8098 |
+| **Node Exporter** | Thu thập chỉ số tài nguyên máy chủ host | Node Exporter v1.8 | 9100 |
 
 ## Luồng đặt vé (Saga Flow + Redis Lock)
 
@@ -172,6 +179,28 @@ curl http://localhost:8080/health
 
 # Aggregated health check (tất cả services)
 curl http://localhost:8080/health/all
+```
+
+## DevOps Monitoring & Observability Stack
+
+Hệ thống tích hợp đầy đủ bộ công cụ quan sát (Observability) và giám sát (Monitoring):
+
+- **Prometheus (`:9090`)**: Scrape định kỳ endpoint `/metrics` của tất cả 7 NestJS microservices và các node-exporter, cadvisor.
+- **Grafana (`:3001`)**: Giao diện trực quan hóa sẵn có 3 Dashboards:
+  - *NestJS Microservices Overview* (Request Rate, 4xx/5xx Error Rates, Latency p50/p95/p99, Node.js Heap & Event Loop Lag, Service UP/DOWN).
+  - *Docker Containers Overview* (cAdvisor: CPU, Memory, Network I/O).
+  - *Host System Overview* (Node Exporter: CPU, RAM, Disk, Load Average).
+- **Alertmanager (`:9093`)**: Nhận cảnh báo từ Prometheus và bắn thông báo trực tiếp qua **Slack Webhook**.
+- **Loki (`:3100`) + Promtail**: Thu thập toàn bộ log stdout/stderr từ tất cả Docker containers, tự động redact thông tin nhạy cảm (JWT secret, DB password, API keys).
+
+### Khởi chạy Monitoring Stack
+
+```bash
+# Khởi động toàn bộ Monitoring Stack (Prometheus, Grafana, Loki, Alertmanager, v.v.)
+npm run up:monitoring
+
+# Hoặc dùng Docker Compose trực tiếp
+docker compose --profile monitoring up -d
 ```
 
 ## Tài liệu

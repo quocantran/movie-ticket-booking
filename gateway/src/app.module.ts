@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { GatewayController } from './gateway.controller';
+import { MetricsModule } from '@app/common';
 
 @Module({
   imports: [
@@ -8,6 +9,7 @@ import { GatewayController } from './gateway.controller';
       isGlobal: true,
       envFilePath: ['.env', '../.env'],
     }),
+    MetricsModule.forRoot('gateway'),
   ],
   controllers: [GatewayController],
 })
