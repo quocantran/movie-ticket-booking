@@ -1,5 +1,6 @@
 import { Controller, All, Req, Res, Get } from '@nestjs/common';
 import { Request, Response } from 'express';
+import { SERVICE_NAMES } from '@app/common';
 
 @Controller()
 export class GatewayController {
@@ -18,18 +19,18 @@ export class GatewayController {
 
   @Get('health')
   healthCheck() {
-    return { status: 'ok', service: 'gateway' };
+    return { status: 'ok', service: SERVICE_NAMES.GATEWAY };
   }
 
   @Get('health/all')
   async aggregatedHealth() {
     const services = [
-      { name: 'booking-service', url: this.bookingServiceUrl },
-      { name: 'seat-service', url: this.seatServiceUrl },
-      { name: 'movie-service', url: this.movieServiceUrl },
-      { name: 'payment-service', url: this.paymentServiceUrl },
-      { name: 'auth-service', url: this.authServiceUrl },
-      { name: 'ai-recommender-service', url: this.aiRecommenderServiceUrl },
+      { name: SERVICE_NAMES.BOOKING, url: this.bookingServiceUrl },
+      { name: SERVICE_NAMES.SEAT, url: this.seatServiceUrl },
+      { name: SERVICE_NAMES.MOVIE, url: this.movieServiceUrl },
+      { name: SERVICE_NAMES.PAYMENT, url: this.paymentServiceUrl },
+      { name: SERVICE_NAMES.AUTH, url: this.authServiceUrl },
+      { name: SERVICE_NAMES.AI_RECOMMENDER, url: this.aiRecommenderServiceUrl },
     ];
 
     const results = await Promise.all(

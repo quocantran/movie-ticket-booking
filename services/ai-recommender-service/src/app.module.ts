@@ -4,7 +4,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { RecommenderModule } from './recommender.module';
 import { MovieEmbeddingEntity } from './entities/movie-embedding.entity';
 import { UserBehaviorEntity } from './entities/user-behavior.entity';
-import { ProcessedEventEntity, MetricsModule } from '@app/common';
+import { ProcessedEventEntity, MetricsModule, SERVICE_NAMES } from '@app/common';
 
 @Module({
   imports: [
@@ -28,7 +28,7 @@ import { ProcessedEventEntity, MetricsModule } from '@app/common';
       }),
     }),
     RecommenderModule,
-    MetricsModule.forRoot('ai-recommender-service'),
+    MetricsModule.forRoot(SERVICE_NAMES.AI_RECOMMENDER),
   ],
 })
 export class AppModule {}

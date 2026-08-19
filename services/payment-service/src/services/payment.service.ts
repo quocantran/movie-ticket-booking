@@ -2,11 +2,12 @@ import { Injectable } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { v4 as uuidv4 } from 'uuid';
 import { WalletEntity } from '../entities/wallet.entity';
-import { PaymentEntity, PaymentStatus } from '../entities/payment.entity';
+import { PaymentEntity } from '../entities/payment.entity';
 import {
   OutboxService,
   AGGREGATE_TYPES,
   EVENT_TYPES,
+  PaymentStatus,
   SeatsReservedPayload,
 } from '@app/common';
 

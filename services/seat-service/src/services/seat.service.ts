@@ -1,18 +1,16 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
-import { SeatEntity, SeatStatus } from '../entities/seat.entity';
+import { SeatEntity } from '../entities/seat.entity';
 import {
   OutboxService,
   AGGREGATE_TYPES,
   EVENT_TYPES,
   BookingCreatedPayload,
   RedisLockService,
+  SeatStatus,
 } from '@app/common';
-
-const REDIS_LOCK_TTL_MS = 5000;
-const SEAT_HOLD_MINUTES = 5;
-const CLEANUP_INTERVAL_MS = 30_000;
+import { SEAT_CONFIG, getSeatLockKey } from '../constants/seat.constants';
 
 @Injectable()
 export class SeatService implements OnModuleInit {
@@ -25,7 +23,7 @@ export class SeatService implements OnModuleInit {
   ) {}
 
   onModuleInit() {
-    setInterval(() => this.cleanupExpiredHolds(), CLEANUP_INTERVAL_MS);
+    setInterval(() => this.cleanupExpiredHolds(), SEAT_CONFIG.CLEANUP_INTERVAL_MS);
   }
 
   async findByShowtimeId(showtimeId: string): Promise<SeatEntity[]> {
@@ -38,13 +36,13 @@ export class SeatService implements OnModuleInit {
   async reserveSeatsWithLock(payload: BookingCreatedPayload): Promise<void> {
     const { bookingId, showtimeId, seatIds, userId, totalAmount } = payload;
 
-    const lockKeys = seatIds.map(
-      (seatId) => `lock:seat:${showtimeId}:${seatId}`,
+    const lockKeys = seatIds.map((seatId) =>
+      getSeatLockKey(showtimeId, seatId),
     );
 
     const lockResult = await this.redisLockService.acquireMultipleLocks(
       lockKeys,
-      REDIS_LOCK_TTL_MS,
+      SEAT_CONFIG.REDIS_LOCK_TTL_MS,
     );
 
     if (!lockResult.success) {
@@ -60,7 +58,7 @@ export class SeatService implements OnModuleInit {
     try {
       await this.dataSource.transaction(async (manager) => {
         const seatRepo = manager.getRepository(SeatEntity);
-        const expireAt = new Date(Date.now() + SEAT_HOLD_MINUTES * 60 * 1000);
+        const expireAt = new Date(Date.now() + SEAT_CONFIG.SEAT_HOLD_MINUTES * 60 * 1000);
 
         const updateResult = await seatRepo
           .createQueryBuilder()
@@ -179,8 +177,8 @@ export class SeatService implements OnModuleInit {
 
   async generateSeatsForShowtime(
     showtimeId: string,
-    rows: number = 5,
-    cols: number = 8,
+    rows: number = SEAT_CONFIG.DEFAULT_ROWS,
+    cols: number = SEAT_CONFIG.DEFAULT_COLS,
   ): Promise<SeatEntity[]> {
     const rowLabels = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').slice(0, rows);
     const seats: SeatEntity[] = [];

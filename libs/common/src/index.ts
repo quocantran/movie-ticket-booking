@@ -1,6 +1,7 @@
 export * from './entities/outbox.entity';
 export * from './entities/processed-event.entity';
 
+export * from './constants';
 export * from './events/event-types';
 
 export * from './outbox/outbox.service';

@@ -4,15 +4,21 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
 import { v4 as uuidv4 } from 'uuid';
 import * as crypto from 'crypto';
-import { TopupEntity, TopupStatus } from '../entities/topup.entity';
+import { TopupEntity } from '../entities/topup.entity';
 import { WalletEntity } from '../entities/wallet.entity';
+import { TopupStatus } from '@app/common';
+import { PAYMENT_CONFIG } from '../constants/payment.constants';
 
-export type TopupVerifyResult = 'PAID' | 'CANCELLED' | 'EXPIRED' | 'PENDING';
+export type TopupVerifyResult =
+  | TopupStatus.PAID
+  | TopupStatus.CANCELLED
+  | TopupStatus.EXPIRED
+  | TopupStatus.PENDING;
 
 @Injectable()
 export class TopupService {
   private readonly logger = new Logger(TopupService.name);
-  private static readonly FETCH_TIMEOUT_MS = 15000;
+  private static readonly FETCH_TIMEOUT_MS = PAYMENT_CONFIG.FETCH_TIMEOUT_MS;
 
   constructor(
     @InjectRepository(TopupEntity)
@@ -117,9 +123,9 @@ export class TopupService {
   }
 
   private async syncTopupFromPayos(topup: TopupEntity): Promise<TopupVerifyResult> {
-    if (topup.status === TopupStatus.PAID) return 'PAID';
-    if (topup.status === TopupStatus.CANCELLED) return 'CANCELLED';
-    if (topup.status === TopupStatus.EXPIRED) return 'EXPIRED';
+    if (topup.status === TopupStatus.PAID) return TopupStatus.PAID;
+    if (topup.status === TopupStatus.CANCELLED) return TopupStatus.CANCELLED;
+    if (topup.status === TopupStatus.EXPIRED) return TopupStatus.EXPIRED;
 
     const payosData = await this.fetchPayosPaymentRequest(topup.orderCode);
     const payosStatus = String(payosData?.status || '').toUpperCase();
@@ -140,20 +146,20 @@ export class TopupService {
           transactionDateTime: transaction?.transactionDateTime,
         });
       });
-      return 'PAID';
+      return TopupStatus.PAID;
     }
 
     if (payosStatus === 'CANCELLED') {
       await this.markTopupStatus(topup.orderCode, TopupStatus.CANCELLED);
-      return 'CANCELLED';
+      return TopupStatus.CANCELLED;
     }
 
     if (payosStatus === 'EXPIRED') {
       await this.markTopupStatus(topup.orderCode, TopupStatus.EXPIRED);
-      return 'EXPIRED';
+      return TopupStatus.EXPIRED;
     }
 
-    return 'PENDING';
+    return TopupStatus.PENDING;
   }
 
   private async creditWallet(
@@ -214,8 +220,8 @@ export class TopupService {
   }
 
   async createTopup(userId: string, amount: number): Promise<{ checkoutUrl: string; orderCode: number }> {
-    if (amount < 1000) {
-      throw new BadRequestException('Số tiền nạp tối thiểu là 1.000 VNĐ');
+    if (amount < PAYMENT_CONFIG.MIN_TOPUP_AMOUNT) {
+      throw new BadRequestException(`Số tiền nạp tối thiểu là ${PAYMENT_CONFIG.MIN_TOPUP_AMOUNT.toLocaleString('vi-VN')} VNĐ`);
     }
 
     const orderCode = this.generateOrderCode();
@@ -395,10 +401,10 @@ export class TopupService {
       this.logger.warn(`payOS cancel failed: ${errorBody}, orderCode=${orderCode}`);
 
       const latestStatus = await this.syncTopupFromPayos(topup);
-      if (latestStatus === 'CANCELLED' || latestStatus === 'EXPIRED') {
+      if (latestStatus === TopupStatus.CANCELLED || latestStatus === TopupStatus.EXPIRED) {
         return;
       }
-      if (latestStatus === 'PAID') {
+      if (latestStatus === TopupStatus.PAID) {
         throw new BadRequestException('Giao dịch đã thanh toán thành công, không thể huỷ');
       }
 

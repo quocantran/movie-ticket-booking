@@ -1,11 +1,10 @@
 import { Controller, Get, Post, Body, UseGuards, Req } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { JwtAuthGuard, JwtPayload } from '@app/common';
+import { JwtAuthGuard, JwtPayload, SERVICE_NAMES } from '@app/common';
 import { WalletEntity } from '../entities/wallet.entity';
 import { Request } from 'express';
-
-const DEFAULT_WALLET_BALANCE = 200000;
+import { PAYMENT_CONFIG } from '../constants/payment.constants';
 
 @Controller()
 export class PaymentController {
@@ -16,7 +15,7 @@ export class PaymentController {
 
   @Get('health')
   healthCheck() {
-    return { status: 'ok', service: 'payment-service' };
+    return { status: 'ok', service: SERVICE_NAMES.PAYMENT };
   }
 
   @UseGuards(JwtAuthGuard)
@@ -35,7 +34,7 @@ export class PaymentController {
   @Post('wallets')
   async createWallet(@Body() body: { userId: string; initialBalance?: number }) {
     const { userId, initialBalance } = body;
-    const balance = initialBalance ?? DEFAULT_WALLET_BALANCE;
+    const balance = initialBalance ?? PAYMENT_CONFIG.DEFAULT_INITIAL_WALLET_BALANCE;
 
     const existing = await this.walletRepository.findOne({ where: { userId } });
     if (existing) {

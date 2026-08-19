@@ -5,6 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { MovieEmbeddingEntity } from '../entities/movie-embedding.entity';
 import { UserBehaviorEntity } from '../entities/user-behavior.entity';
 import { EmbeddingService } from './embedding.service';
+import { AI_CONFIG } from '../constants/ai.constants';
 
 export interface MovieInfo {
   id: string;
@@ -150,21 +151,7 @@ export class RecommenderService implements OnModuleInit {
     return union === 0 ? 0 : intersection / union;
   }
 
-  private static readonly COSINE_BONUS_TIERS = [
-    { threshold: 0.8, bonus: 0.10 },
-    { threshold: 0.6, bonus: 0.05 },
-    { threshold: 0.4, bonus: 0.02 },
-  ];
-
-  private static readonly JACCARD_BONUS_TIERS = [
-    { threshold: 0.6, bonus: 0.08 },
-    { threshold: 0.3, bonus: 0.04 },
-    { threshold: 0.1, bonus: 0.01 },
-  ];
-
-  private static readonly MAX_RAW_SCORE = 1.18;
-
-  private getTierBonus(value: number, tiers: { threshold: number; bonus: number }[]): number {
+  private getTierBonus(value: number, tiers: readonly { threshold: number; bonus: number }[]): number {
     for (const tier of tiers) {
       if (value > tier.threshold) return tier.bonus;
     }
@@ -190,13 +177,13 @@ export class RecommenderService implements OnModuleInit {
     const avgCosine = totalCosine / watchedEmbeddings.length;
     const avgJaccard = totalJaccard / watchedEmbeddings.length;
 
-    const baseScore = 0.6 * avgCosine + 0.4 * avgJaccard;
+    const baseScore = AI_CONFIG.COSINE_WEIGHT * avgCosine + AI_CONFIG.JACCARD_WEIGHT * avgJaccard;
 
-    const cosineBonus = this.getTierBonus(avgCosine, RecommenderService.COSINE_BONUS_TIERS);
-    const jaccardBonus = this.getTierBonus(avgJaccard, RecommenderService.JACCARD_BONUS_TIERS);
+    const cosineBonus = this.getTierBonus(avgCosine, AI_CONFIG.COSINE_BONUS_TIERS);
+    const jaccardBonus = this.getTierBonus(avgJaccard, AI_CONFIG.JACCARD_BONUS_TIERS);
 
     const rawScore = baseScore + cosineBonus + jaccardBonus;
-    const normalizedScore = rawScore / RecommenderService.MAX_RAW_SCORE;
+    const normalizedScore = rawScore / AI_CONFIG.MAX_RAW_SCORE;
 
     return {
       combinedScore: Math.round(normalizedScore * 10000) / 10000,
@@ -205,10 +192,9 @@ export class RecommenderService implements OnModuleInit {
     };
   }
 
-
   async getRecommendationsGrouped(
     userId: string,
-    limit: number = 10,
+    limit: number = AI_CONFIG.DEFAULT_RECOMMENDATION_LIMIT,
   ): Promise<GroupedRecommendations> {
     const emptyResult: GroupedRecommendations = {
       topPicks: [],
@@ -280,7 +266,7 @@ export class RecommenderService implements OnModuleInit {
           );
           return hasGenre;
         })
-        .slice(0, 8);
+        .slice(0, AI_CONFIG.DEFAULT_GENRE_SECTION_LIMIT);
 
       if (genreMovies.length > 0) {
         genreSections.push({

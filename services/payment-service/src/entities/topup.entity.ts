@@ -6,14 +6,9 @@ import {
   UpdateDateColumn,
   Index,
 } from 'typeorm';
+import { TopupStatus } from '@app/common';
 
-export enum TopupStatus {
-  PENDING = 'PENDING',
-  PAID = 'PAID',
-  CANCELLED = 'CANCELLED',
-  EXPIRED = 'EXPIRED',
-  FAILED = 'FAILED',
-}
+export { TopupStatus };
 
 @Entity('topups')
 @Index(['userId'])

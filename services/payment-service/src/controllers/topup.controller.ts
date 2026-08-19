@@ -13,8 +13,8 @@ import {
   ParseIntPipe,
 } from '@nestjs/common';
 import { Request, Response } from 'express';
-import { JwtAuthGuard, JwtPayload } from '@app/common';
-import { TopupService, TopupVerifyResult } from '../services/topup.service';
+import { JwtAuthGuard, JwtPayload, TopupStatus } from '@app/common';
+import { TopupService } from '../services/topup.service';
 
 @Controller('topup')
 export class TopupController {
@@ -42,11 +42,12 @@ export class TopupController {
     const frontendPort = process.env.FRONTEND_PORT || '3000';
     try {
       const result = await this.topupService.verifyTopup(orderCode);
-      const redirectByResult: Record<TopupVerifyResult, string> = {
-        PAID: 'success',
-        CANCELLED: 'cancelled',
-        EXPIRED: 'expired',
-        PENDING: 'pending',
+      const redirectByResult: Record<TopupStatus, string> = {
+        [TopupStatus.PAID]: 'success',
+        [TopupStatus.CANCELLED]: 'cancelled',
+        [TopupStatus.EXPIRED]: 'expired',
+        [TopupStatus.PENDING]: 'pending',
+        [TopupStatus.FAILED]: 'failed',
       };
 
       return res.redirect(

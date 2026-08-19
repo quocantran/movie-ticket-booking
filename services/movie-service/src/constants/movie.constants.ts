@@ -1,0 +1,4 @@
+export const MOVIE_CONFIG = {
+  DEFAULT_SHOWTIME_ROWS: 5,
+  DEFAULT_SHOWTIME_COLS: 8,
+} as const;

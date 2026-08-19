@@ -6,14 +6,9 @@ import {
   UpdateDateColumn,
   Index,
 } from 'typeorm';
+import { BookingStatus } from '@app/common';
 
-export enum BookingStatus {
-  PENDING = 'PENDING',
-  SEATS_RESERVED = 'SEATS_RESERVED',
-  PAYMENT_PROCESSED = 'PAYMENT_PROCESSED',
-  CONFIRMED = 'CONFIRMED',
-  CANCELLED = 'CANCELLED',
-}
+export { BookingStatus };
 
 @Entity('bookings')
 @Index(['userId'])

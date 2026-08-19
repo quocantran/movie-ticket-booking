@@ -3,7 +3,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from './auth.module';
 import { UserEntity } from './entities/user.entity';
-import { MetricsModule } from '@app/common';
+import { MetricsModule, SERVICE_NAMES } from '@app/common';
 
 @Module({
   imports: [
@@ -27,7 +27,7 @@ import { MetricsModule } from '@app/common';
       }),
     }),
     AuthModule,
-    MetricsModule.forRoot('auth-service'),
+    MetricsModule.forRoot(SERVICE_NAMES.AUTH),
   ],
 })
 export class AppModule {}

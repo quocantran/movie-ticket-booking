@@ -6,11 +6,9 @@ import {
   UpdateDateColumn,
   Index,
 } from 'typeorm';
+import { UserRole } from '@app/common';
 
-export enum UserRole {
-  USER = 'USER',
-  ADMIN = 'ADMIN',
-}
+export { UserRole };
 
 @Entity('users')
 @Index(['email'])

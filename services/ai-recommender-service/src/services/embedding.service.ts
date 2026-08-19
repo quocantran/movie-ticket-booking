@@ -1,4 +1,5 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
+import { AI_CONFIG } from '../constants/ai.constants';
 
 let pipeline: any;
 let env: any;
@@ -34,7 +35,7 @@ export class EmbeddingService implements OnModuleInit {
 
         env.allowLocalModels = false;
 
-        this.embedder = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2');
+        this.embedder = await pipeline(AI_CONFIG.TASK_NAME, AI_CONFIG.MODEL_NAME);
       } catch (error) {
         throw error;
       } finally {
@@ -53,7 +54,7 @@ export class EmbeddingService implements OnModuleInit {
     }
 
     try {
-      const truncatedText = text.slice(0, 5000);
+      const truncatedText = text.slice(0, AI_CONFIG.MAX_TEXT_LENGTH);
 
       const output = await this.embedder(truncatedText, {
         pooling: 'mean',

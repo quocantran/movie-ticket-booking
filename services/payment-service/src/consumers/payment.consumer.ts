@@ -4,6 +4,7 @@ import { PaymentService } from '../services/payment.service';
 import {
   KAFKA_TOPICS,
   EVENT_TYPES,
+  EVENT_HEADERS,
   IdempotencyService,
   SeatsReservedPayload,
 } from '@app/common';
@@ -36,8 +37,8 @@ export class PaymentKafkaConsumer {
         ]),
       ) as Record<string, string | undefined>;
 
-      const eventType = headers['eventType'] as string;
-      const eventId = headers['id'];
+      const eventType = headers[EVENT_HEADERS.EVENT_TYPE] as string;
+      const eventId = headers[EVENT_HEADERS.ID];
       const eventPayload = messageBody.payload || messageBody;
 
       if (!eventType || !eventId) return;

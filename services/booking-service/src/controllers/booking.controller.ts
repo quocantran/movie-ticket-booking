@@ -1,6 +1,6 @@
 import { Controller, Get, Post, Body, Param, UseGuards, Req } from '@nestjs/common';
 import { BookingService } from '../services/booking.service';
-import { JwtAuthGuard, JwtPayload } from '@app/common';
+import { JwtAuthGuard, JwtPayload, SERVICE_NAMES } from '@app/common';
 import { Request } from 'express';
 
 @Controller()
@@ -9,7 +9,7 @@ export class BookingController {
 
   @Get('health')
   healthCheck() {
-    return { status: 'ok', service: 'booking-service' };
+    return { status: 'ok', service: SERVICE_NAMES.BOOKING };
   }
 
   @UseGuards(JwtAuthGuard)

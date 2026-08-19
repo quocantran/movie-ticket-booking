@@ -1,6 +1,6 @@
 import { Controller, Get, Post, Body, Param, UseGuards } from '@nestjs/common';
 import { MovieService, CreateMovieDto, CreateShowtimeDto } from '../services/movie.service';
-import { JwtAuthGuard, RolesGuard, Roles } from '@app/common';
+import { JwtAuthGuard, RolesGuard, Roles, UserRole, SERVICE_NAMES } from '@app/common';
 
 @Controller()
 export class MovieController {
@@ -8,7 +8,7 @@ export class MovieController {
 
   @Get('health')
   healthCheck() {
-    return { status: 'ok', service: 'movie-service' };
+    return { status: 'ok', service: SERVICE_NAMES.MOVIE };
   }
 
   @Get('movies')
@@ -27,14 +27,14 @@ export class MovieController {
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('ADMIN')
+  @Roles(UserRole.ADMIN)
   @Post('movies')
   async createMovie(@Body() dto: CreateMovieDto) {
     return this.movieService.createMovie(dto);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('ADMIN')
+  @Roles(UserRole.ADMIN)
   @Post('movies/:id/showtimes')
   async createShowtime(
     @Param('id') movieId: string,

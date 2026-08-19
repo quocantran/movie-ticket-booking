@@ -1,6 +1,6 @@
 import { Controller, Post, Get, Body, UseGuards, Req } from '@nestjs/common';
 import { AuthService, LoginDto, RegisterDto } from '../services/auth.service';
-import { JwtAuthGuard, JwtPayload } from '@app/common';
+import { JwtAuthGuard, JwtPayload, SERVICE_NAMES } from '@app/common';
 import { Request } from 'express';
 
 @Controller()
@@ -9,7 +9,7 @@ export class AuthController {
 
   @Get('health')
   healthCheck() {
-    return { status: 'ok', service: 'auth-service' };
+    return { status: 'ok', service: SERVICE_NAMES.AUTH };
   }
 
   @Post('auth/login')

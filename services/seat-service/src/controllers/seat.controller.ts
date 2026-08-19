@@ -1,5 +1,7 @@
 import { Controller, Get, Post, Body, Query } from '@nestjs/common';
 import { SeatService } from '../services/seat.service';
+import { SERVICE_NAMES } from '@app/common';
+import { SEAT_CONFIG } from '../constants/seat.constants';
 
 @Controller()
 export class SeatController {
@@ -7,7 +9,7 @@ export class SeatController {
 
   @Get('health')
   healthCheck() {
-    return { status: 'ok', service: 'seat-service' };
+    return { status: 'ok', service: SERVICE_NAMES.SEAT };
   }
 
   @Get('seats')
@@ -21,8 +23,8 @@ export class SeatController {
   ) {
     const seats = await this.seatService.generateSeatsForShowtime(
       body.showtimeId,
-      body.rows || 5,
-      body.cols || 8,
+      body.rows || SEAT_CONFIG.DEFAULT_ROWS,
+      body.cols || SEAT_CONFIG.DEFAULT_COLS,
     );
     return { generated: seats.length, showtimeId: body.showtimeId };
   }

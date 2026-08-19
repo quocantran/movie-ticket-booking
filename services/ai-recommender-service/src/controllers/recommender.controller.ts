@@ -6,8 +6,9 @@ import {
   Req,
 } from '@nestjs/common';
 import { RecommenderService } from '../services/recommender.service';
-import { JwtAuthGuard, JwtPayload } from '@app/common';
+import { JwtAuthGuard, JwtPayload, SERVICE_NAMES } from '@app/common';
 import { Request } from 'express';
+import { AI_CONFIG } from '../constants/ai.constants';
 
 @Controller()
 export class RecommenderController {
@@ -15,7 +16,7 @@ export class RecommenderController {
 
   @Get('health')
   healthCheck() {
-    return { status: 'ok', service: 'ai-recommender-service' };
+    return { status: 'ok', service: SERVICE_NAMES.AI_RECOMMENDER };
   }
 
   @UseGuards(JwtAuthGuard)
@@ -25,7 +26,7 @@ export class RecommenderController {
     @Query('limit') limitStr?: string,
   ) {
     const user = (req as any).user as JwtPayload;
-    const limit = limitStr ? parseInt(limitStr, 10) : 10;
+    const limit = limitStr ? parseInt(limitStr, 10) : AI_CONFIG.DEFAULT_RECOMMENDATION_LIMIT;
 
     const grouped = await this.recommenderService.getRecommendationsGrouped(
       user.sub,

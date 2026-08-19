@@ -10,6 +10,7 @@ import {
   EVENT_TYPES,
   MovieCreatedPayload,
 } from '@app/common';
+import { MOVIE_CONFIG } from '../constants/movie.constants';
 
 export interface CreateMovieDto {
   title: string;
@@ -103,7 +104,11 @@ export class MovieService {
       const response = await fetch(`${this.seatServiceUrl}/seats/generate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ showtimeId, rows: 5, cols: 8 }),
+        body: JSON.stringify({
+          showtimeId,
+          rows: MOVIE_CONFIG.DEFAULT_SHOWTIME_ROWS,
+          cols: MOVIE_CONFIG.DEFAULT_SHOWTIME_COLS,
+        }),
       });
       if (response.ok) {
         const data = await response.json();

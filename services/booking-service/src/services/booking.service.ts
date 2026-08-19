@@ -2,11 +2,12 @@ import { Injectable, NotFoundException, BadRequestException } from '@nestjs/comm
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
 import { v4 as uuidv4 } from 'uuid';
-import { BookingEntity, BookingStatus } from '../entities/booking.entity';
+import { BookingEntity } from '../entities/booking.entity';
 import {
   OutboxService,
   AGGREGATE_TYPES,
   EVENT_TYPES,
+  BookingStatus,
   SeatsReservedPayload,
   SeatReservationFailedPayload,
   PaymentProcessedPayload,
@@ -109,7 +110,7 @@ export class BookingService {
         payload: {
           bookingId: payload.bookingId,
           reason: payload.reason,
-          status: 'CANCELLED',
+          status: BookingStatus.CANCELLED,
         },
       });
     });
@@ -140,7 +141,7 @@ export class BookingService {
           movieId: booking.movieId,
           showtimeId: booking.showtimeId,
           seatIds: booking.seatIds,
-          status: 'CONFIRMED',
+          status: BookingStatus.CONFIRMED,
         },
       });
     });
@@ -162,7 +163,7 @@ export class BookingService {
         payload: {
           bookingId: payload.bookingId,
           reason: payload.reason,
-          status: 'CANCELLED',
+          status: BookingStatus.CANCELLED,
         },
       });
     });

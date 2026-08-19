@@ -1,6 +1,7 @@
 import { NestFactory } from '@nestjs/core';
 import { MicroserviceOptions, Transport } from '@nestjs/microservices';
 import { AppModule } from './app.module';
+import { KAFKA_CLIENT_IDS, KAFKA_CONSUMER_GROUPS } from '@app/common';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -15,11 +16,11 @@ async function bootstrap() {
     transport: Transport.KAFKA,
     options: {
       client: {
-        clientId: 'ai-recommender-service',
+        clientId: KAFKA_CLIENT_IDS.AI_RECOMMENDER,
         brokers: [kafkaBroker],
       },
       consumer: {
-        groupId: 'ai-recommender-service-group',
+        groupId: KAFKA_CONSUMER_GROUPS.AI_RECOMMENDER,
       },
     },
   });

@@ -7,12 +7,9 @@ import {
   Index,
   Unique,
 } from 'typeorm';
+import { SeatStatus } from '@app/common';
 
-export enum SeatStatus {
-  AVAILABLE = 'AVAILABLE',
-  HELD = 'HELD',
-  BOOKED = 'BOOKED',
-}
+export { SeatStatus };
 
 @Entity('seats')
 @Unique(['showtimeId', 'seatNumber'])

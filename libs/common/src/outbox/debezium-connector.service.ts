@@ -1,4 +1,5 @@
 import { Injectable, OnApplicationBootstrap } from '@nestjs/common';
+import { EVENT_HEADERS } from '../constants/headers.constants';
 
 interface ConnectorResponse {
   name: string;
@@ -82,7 +83,7 @@ export class DebeziumConnectorService implements OnApplicationBootstrap {
       'transforms.outbox.table.field.event.type': 'event_type',
       'transforms.outbox.table.field.event.payload': 'payload',
       'transforms.outbox.table.fields.additional.placement':
-        'event_type:header:eventType',
+        `event_type:header:${EVENT_HEADERS.EVENT_TYPE}`,
       'transforms.outbox.route.by.field': 'aggregate_type',
       'transforms.outbox.route.topic.replacement': '${routedByValue}.events',
       'key.converter': 'org.apache.kafka.connect.storage.StringConverter',

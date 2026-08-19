@@ -5,6 +5,8 @@ import { JwtService } from '@nestjs/jwt';
 import { v4 as uuidv4 } from 'uuid';
 import { hash, compare } from 'bcryptjs';
 import { UserEntity } from '../entities/user.entity';
+import { UserRole } from '@app/common';
+import { AUTH_CONFIG } from '../constants/auth.constants';
 
 export interface LoginDto {
   email: string;
@@ -29,8 +31,10 @@ export interface AuthResponse {
 
 @Injectable()
 export class AuthService implements OnApplicationBootstrap {
-  private readonly SALT_ROUNDS = 10;
-  private readonly DEFAULT_PASSWORD = '123456';
+  private readonly saltRounds = AUTH_CONFIG.SALT_ROUNDS;
+  private readonly defaultPassword =
+    process.env.DEFAULT_USER_PASSWORD ||
+    AUTH_CONFIG.DEFAULT_USER_PASSWORD_FALLBACK;
 
   constructor(
     @InjectRepository(UserEntity)
@@ -44,7 +48,7 @@ export class AuthService implements OnApplicationBootstrap {
     });
 
     if (usersWithoutPassword.length > 0) {
-      const hashed = await hash(this.DEFAULT_PASSWORD, this.SALT_ROUNDS);
+      const hashed = await hash(this.defaultPassword, this.saltRounds);
       for (const user of usersWithoutPassword) {
         await this.userRepository.update(user.id, { passwordHash: hashed });
       }
@@ -67,7 +71,8 @@ export class AuthService implements OnApplicationBootstrap {
       throw new UnauthorizedException('Email hoặc mật khẩu không đúng');
     }
 
-    const payload = { sub: user.id, email: user.email, name: user.name, role: user.role || 'USER' };
+    const role = user.role || UserRole.USER;
+    const payload = { sub: user.id, email: user.email, name: user.name, role };
     const access_token = await this.jwtService.signAsync(payload);
 
     return {
@@ -76,7 +81,7 @@ export class AuthService implements OnApplicationBootstrap {
         id: user.id,
         name: user.name,
         email: user.email,
-        role: user.role || 'USER',
+        role,
       },
     };
   }
@@ -87,19 +92,21 @@ export class AuthService implements OnApplicationBootstrap {
       throw new ConflictException('Email đã được sử dụng');
     }
 
-    const hashed = await hash(dto.password, this.SALT_ROUNDS);
+    const hashed = await hash(dto.password, this.saltRounds);
 
     const user = this.userRepository.create({
       id: uuidv4(),
       name: dto.name,
       email: dto.email,
       passwordHash: hashed,
+      role: UserRole.USER,
     });
     await this.userRepository.save(user);
 
     await this.createWalletForUser(user.id);
 
-    const payload = { sub: user.id, email: user.email, name: user.name, role: user.role || 'USER' };
+    const role = user.role || UserRole.USER;
+    const payload = { sub: user.id, email: user.email, name: user.name, role };
     const access_token = await this.jwtService.signAsync(payload);
 
     return {
@@ -108,7 +115,7 @@ export class AuthService implements OnApplicationBootstrap {
         id: user.id,
         name: user.name,
         email: user.email,
-        role: user.role || 'USER',
+        role,
       },
     };
   }
@@ -119,7 +126,7 @@ export class AuthService implements OnApplicationBootstrap {
       await fetch(`${paymentServiceUrl}/wallets`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId, initialBalance: 200000 }),
+        body: JSON.stringify({ userId }),
       });
     } catch {}
   }
@@ -133,7 +140,7 @@ export class AuthService implements OnApplicationBootstrap {
       id: user.id,
       name: user.name,
       email: user.email,
-      role: user.role || 'USER',
+      role: user.role || UserRole.USER,
     };
   }
 }

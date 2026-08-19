@@ -1,0 +1,4 @@
+export const AUTH_CONFIG = {
+  SALT_ROUNDS: 10,
+  DEFAULT_USER_PASSWORD_FALLBACK: '123456',
+} as const;

@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { Request } from 'express';
+import { AUTH_HEADERS } from '../constants/headers.constants';
 
 export interface JwtPayload {
   sub: string;
@@ -38,9 +39,9 @@ export class JwtAuthGuard implements CanActivate {
   }
 
   private extractTokenFromHeader(request: Request): string | null {
-    const authHeader = request.headers.authorization;
+    const authHeader = request.headers[AUTH_HEADERS.AUTHORIZATION] as string | undefined;
     if (!authHeader) return null;
     const [type, token] = authHeader.split(' ');
-    return type === 'Bearer' ? token : null;
+    return type === AUTH_HEADERS.BEARER_PREFIX ? token : null;
   }
 }
